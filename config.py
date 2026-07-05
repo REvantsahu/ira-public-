@@ -966,6 +966,14 @@ EXCLUDED_LIVE_TOOLS = {
     "skill_control",
     "mcp_control",
     "opencode_run",
-    "browser_agent_task"
+    "browser_agent_task",
+    "todo_control",
+    "send_whatsapp",
+    "map_control",
+    "node_control",
+    "media_generation",
+    "web_search",
+    "weather_control",
+    "memory_control",
+    "clipboard_control"
 }
-
