@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IRA — Intelligent Responsive Assistant</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg: #0a0a0f;
+            --surface: #12121a;
+            --surface-2: #1a1a25;
+            --border: #2a2a3a;
+            --text: #e8e8f0;
+            --text-dim: #8888a0;
+            --accent: #00d4ff;
+            --accent-2: #7c3aed;
+            --accent-3: #f472b6;
+            --green: #34d399;
+            --red: #f87171;
+            --orange: #fb923c;
+        }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        /* ── Animated Background ── */
+        .bg-grid {
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+            z-index: -2;
+        }
+
+        .bg-glow {
+            position: fixed;
+            width: 600px;
+            height: 600px;
+            border-radius: 50%;
+            filter: blur(150px);
+            opacity: 0.15;
+            z-index: -1;
+            animation: float 20s ease-in-out infinite;
+        }
+
+        .bg-glow-1 {
+            background: var(--accent);
+            top: -200px;
+            right: -200px;
+            animation-delay: 0s;
+        }
+
+        .bg-glow-2 {
+            background: var(--accent-2);
+            bottom: -200px;
+            left: -200px;
+            animation-delay: -10s;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(50px, -30px) scale(1.1); }
+            66% { transform: translate(-30px, 50px) scale(0.9); }
+        }
+
+        /* ── Navigation ── */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(20px);
+            background: rgba(10, 10, 15, 0.8);
+            border-bottom: 1px solid var(--border);
+            transition: all 0.3s;
+        }
+
+        nav.scrolled {
+            padding: 0.7rem 2rem;
+            background: rgba(10, 10, 15, 0.95);
+        }
+
+        .nav-logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+        }
+
+        .nav-logo-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 16px;
+            color: white;
+        }
+
+        .nav-logo-text {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            list-style: none;
+        }
+
+        .nav-links a {
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover { color: var(--accent); }
+
+        .nav-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            color: var(--green);
+        }
+
+        .nav-status-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--green);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7); }
+            50% { opacity: 0.8; box-shadow: 0 0 0 8px rgba(52, 211, 153, 0); }
+        }
+
+        /* ── Hero ── */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 8rem 2rem 4rem;
+            position: relative;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 16px;
+            border-radius: 100px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            margin-bottom: 2rem;
+            animation: fadeInUp 0.8s ease;
+        }
+
+        .hero-badge-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--accent);
+            border-radius: 50%;
+        }
+
+        .hero h1 {
+            font-size: clamp(3rem, 8vw, 6rem);
+            font-weight: 900;
+            line-height: 1.05;
+            margin-bottom: 1.5rem;
+            animation: fadeInUp 0.8s ease 0.1s both;
+        }
+
+        .hero h1 .gradient {
+            background: linear-gradient(135deg, var(--accent), var(--accent-2), var(--accent-3));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero-sub {
+            font-size: 1.25rem;
+            color: var(--text-dim);
+            max-width: 600px;
+            margin-bottom: 3rem;
+            animation: fadeInUp 0.8s ease 0.2s both;
+        }
+
+        .hero-cta {
+            display: flex;
+            gap: 1rem;
+            animation: fadeInUp 0.8s ease 0.3s both;
+        }
+
+        .btn {
+            padding: 14px 32px;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            color: white;
+            box-shadow: 0 4px 24px rgba(0, 212, 255, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 32px rgba(0, 212, 255, 0.4);
+        }
+
+        .btn-secondary {
+            background: var(--surface-2);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--accent);
+            background: var(--surface);
+        }
+
+        .hero-terminal {
+            margin-top: 4rem;
+            width: 100%;
+            max-width: 700px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+            animation: fadeInUp 0.8s ease 0.4s both;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .terminal-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            background: var(--surface-2);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .terminal-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .terminal-dot.red { background: #ff5f57; }
+        .terminal-dot.yellow { background: #febc2e; }
+        .terminal-dot.green { background: #28c840; }
+
+        .terminal-title {
+            flex: 1;
+            text-align: center;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .terminal-body {
+            padding: 1.5rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            line-height: 1.8;
+            min-height: 200px;
+        }
+
+        .terminal-line {
+            opacity: 0;
+            animation: typeLine 0.3s ease forwards;
+        }
+
+        .terminal-line .prompt { color: var(--green); }
+        .terminal-line .cmd { color: var(--text); }
+        .terminal-line .ira { color: var(--accent); }
+        .terminal-line .tool { color: var(--orange); }
+        .terminal-line .dim { color: var(--text-dim); }
+
+        @keyframes typeLine {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ── Sections ── */
+        section {
+            padding: 6rem 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .section-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 1rem;
+        }
+
+        .section-title {
+            font-size: clamp(2rem, 4vw, 3rem);
+            font-weight: 800;
+            margin-bottom: 1rem;
+        }
+
+        .section-desc {
+            font-size: 1.1rem;
+            color: var(--text-dim);
+            max-width: 600px;
+            margin-bottom: 3rem;
+        }
+
+        /* ── Features Grid ── */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .feature-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 2rem;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .feature-card:hover {
+            border-color: rgba(0, 212, 255, 0.3);
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .feature-card:hover::before { opacity: 1; }
+
+        .feature-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            margin-bottom: 1.2rem;
+        }
+
+        .feature-icon.blue { background: rgba(0, 212, 255, 0.1); }
+        .feature-icon.purple { background: rgba(124, 58, 237, 0.1); }
+        .feature-icon.pink { background: rgba(244, 114, 182, 0.1); }
+        .feature-icon.green { background: rgba(52, 211, 153, 0.1); }
+        .feature-icon.orange { background: rgba(251, 146, 60, 0.1); }
+        .feature-icon.red { background: rgba(248, 113, 113, 0.1); }
+
+        .feature-card h3 {
+            font-size: 1.15rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .feature-card p {
+            color: var(--text-dim);
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        /* ── How It Works ── */
+        .how-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 2rem;
+            counter-reset: step;
+        }
+
+        .how-step {
+            position: relative;
+            padding: 2rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            counter-increment: step;
+            transition: all 0.3s;
+        }
+
+        .how-step:hover {
+            border-color: rgba(0, 212, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .how-step::before {
+            content: counter(step);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            border-radius: 10px;
+            font-weight: 800;
+            font-size: 0.9rem;
+            color: white;
+            margin-bottom: 1rem;
+        }
+
+        .how-step h3 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .how-step p {
+            color: var(--text-dim);
+            font-size: 0.9rem;
+        }
+
+        /* ── Stats ── */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .stat-card {
+            text-align: center;
+            padding: 2.5rem 1.5rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            transition: all 0.3s;
+        }
+
+        .stat-card:hover {
+            border-color: rgba(0, 212, 255, 0.3);
+        }
+
+        .stat-number {
+            font-size: 3rem;
+            font-weight: 900;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            color: var(--text-dim);
+            font-size: 0.95rem;
+            font-weight: 500;
+        }
+
+        /* ── Personality ── */
+        .personality-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .personality-card {
+            padding: 2rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            transition: all 0.3s;
+        }
+
+        .personality-card:hover {
+            border-color: rgba(124, 58, 237, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .personality-emoji {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        .personality-card h3 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .personality-card p {
+            color: var(--text-dim);
+            font-size: 0.9rem;
+        }
+
+        /* ── Tech Stack ── */
+        .tech-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 1rem;
+        }
+
+        .tech-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 1rem 1.2rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .tech-item:hover {
+            border-color: var(--accent);
+            background: var(--surface-2);
+        }
+
+        .tech-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        /* ── CTA Section ── */
+        .cta-section {
+            text-align: center;
+            padding: 8rem 2rem;
+            position: relative;
+        }
+
+        .cta-section::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(ellipse at center, rgba(0, 212, 255, 0.08), transparent 70%);
+        }
+
+        .cta-section h2 {
+            font-size: clamp(2rem, 5vw, 3.5rem);
+            font-weight: 900;
+            margin-bottom: 1rem;
+        }
+
+        .cta-section p {
+            font-size: 1.15rem;
+            color: var(--text-dim);
+            margin-bottom: 2.5rem;
+        }
+
+        /* ── Footer ── */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 3rem 2rem;
+            text-align: center;
+        }
+
+        .footer-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .footer-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .footer-logo {
+            width: 28px;
+            height: 28px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 12px;
+            color: white;
+        }
+
+        .footer-text {
+            color: var(--text-dim);
+            font-size: 0.85rem;
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 1.5rem;
+        }
+
+        .footer-links a {
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 0.85rem;
+            transition: color 0.2s;
+        }
+
+        .footer-links a:hover { color: var(--accent); }
+
+        /* ── Animations ── */
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .reveal {
+            opacity: 0;
+            transform: translateY(40px);
+            transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .reveal.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 768px) {
+            nav { padding: 0.8rem 1rem; }
+            .nav-links { display: none; }
+            .hero { padding: 6rem 1.5rem 3rem; }
+            .hero-cta { flex-direction: column; width: 100%; }
+            .btn { justify-content: center; }
+            section { padding: 4rem 1.5rem; }
+            .features-grid { grid-template-columns: 1fr; }
+            .footer-content { flex-direction: column; text-align: center; }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-grid"></div>
+    <div class="bg-glow bg-glow-1"></div>
+    <div class="bg-glow bg-glow-2"></div>
+
+    <!-- Navigation -->
+    <nav id="navbar">
+        <a href="#" class="nav-logo">
+            <div class="nav-logo-icon">I</div>
+            <span class="nav-logo-text">IRA</span>
+        </a>
+        <ul class="nav-links">
+            <li><a href="#features">Features</a></li>
+            <li><a href="#how">How It Works</a></li>
+            <li><a href="#personality">Personality</a></li>
+            <li><a href="#tech">Tech Stack</a></li>
+        </ul>
+        <div class="nav-status">
+            <div class="nav-status-dot"></div>
+            Online
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <section class="hero">
+        <div class="hero-badge">
+            <div class="hero-badge-dot"></div>
+            Powered by Google Gemini
+        </div>
+        <h1>Meet <span class="gradient">IRA</span></h1>
+        <p class="hero-sub">
+            Your cheerful, warm, and highly capable desktop AI agent.
+            She sees your screen, controls your computer, and remembers everything.
+        </p>
+        <div class="hero-cta">
+            <a href="#features" class="btn btn-primary">
+                <span>Explore Features</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </a>
+            <a href="#tech" class="btn btn-secondary">View Tech Stack</a>
+        </div>
+
+        <!-- Terminal Demo -->
+        <div class="hero-terminal">
+            <div class="terminal-bar">
+                <div class="terminal-dot red"></div>
+                <div class="terminal-dot yellow"></div>
+                <div class="terminal-dot green"></div>
+                <span class="terminal-title">IRA — Desktop Agent</span>
+            </div>
+            <div class="terminal-body" id="terminal"></div>
+        </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features">
+        <div class="reveal">
+            <div class="section-label">✦ Capabilities</div>
+            <h2 class="section-title">What IRA Can Do</h2>
+            <p class="section-desc">88+ tools. One agent. She handles everything from web browsing to file management to sending WhatsApp messages.</p>
+        </div>
+        <div class="features-grid reveal">
+            <div class="feature-card">
+                <div class="feature-icon blue">👁</div>
+                <h3>Screen Vision</h3>
+                <p>IRA sees your screen in real-time. She can read what's on display, find buttons, and understand any app — just like you would.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon purple">🖱</div>
+                <h3>Desktop Control</h3>
+                <p>Click, type, scroll, open apps — IRA controls your mouse and keyboard. She can navigate any application on your computer.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon pink">💬</div>
+                <h3>WhatsApp Messaging</h3>
+                <p>Send WhatsApp messages directly. IRA opens WhatsApp Web, finds the contact, types the message, and sends it — fully automated.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon green">🌐</div>
+                <h3>Browser Automation</h3>
+                <p>Search Google, open YouTube, fill forms, extract data — IRA automates your browser at DOM level. Pixel-perfect, every time.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon orange">🧠</div>
+                <h3>Memory System</h3>
+                <p>IRA remembers everything across sessions. Your preferences, projects, past conversations — all structured and searchable.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon red">⚡</div>
+                <h3>Voice Mode</h3>
+                <p>Talk to IRA in real-time. Powered by Gemini Live API with sub-200ms latency. She speaks back in Hinglish. Barge-in supported.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works -->
+    <section id="how">
+        <div class="reveal">
+            <div class="section-label">◈ Process</div>
+            <h2 class="section-title">How IRA Thinks</h2>
+            <p class="section-desc">IRA doesn't just follow commands — she sees, reasons, and acts. Like a human, but faster.</p>
+        </div>
+        <div class="how-grid reveal">
+            <div class="how-step">
+                <h3>See</h3>
+                <p>Takes a screenshot and analyzes what's on your screen. Identifies apps, buttons, text, and context.</p>
+            </div>
+            <div class="how-step">
+                <h3>Identify</h3>
+                <p>Finds interactive elements — buttons, inputs, menus. Uses DOM-level precision for web, vision for desktop.</p>
+            </div>
+            <div class="how-step">
+                <h3>Reason</h3>
+                <p>Decides the best action. Which button to click? What text to type? Plans the optimal path to your goal.</p>
+            </div>
+            <div class="how-step">
+                <h3>Act</h3>
+                <p>Executes the action — clicks, types, scrolls. Uses the right tool for the job, every time.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Stats -->
+    <section id="stats">
+        <div class="stats-grid reveal">
+            <div class="stat-card">
+                <div class="stat-number" data-target="88">0</div>
+                <div class="stat-label">Built-in Tools</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" data-target="200">0</div>
+                <div class="stat-label">MCP Integrations</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" data-target="8">0</div>
+                <div class="stat-label">API Keys</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" data-target="50">0</div>
+                <div class="stat-label">Max Iterations</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Personality -->
+    <section id="personality">
+        <div class="reveal">
+            <div class="section-label">♡ Personality</div>
+            <h2 class="section-title">More Than a Tool</h2>
+            <p class="section-desc">IRA isn't a cold assistant. She's a friend — warm, playful, and genuinely cares about getting things done for you.</p>
+        </div>
+        <div class="personality-grid reveal">
+            <div class="personality-card">
+                <div class="personality-emoji">😄</div>
+                <h3>Cheerful & Warm</h3>
+                <p>Matches your energy. Excited? She's excited. Need to focus? She's all business. She adapts to you.</p>
+            </div>
+            <div class="personality-card">
+                <div class="personality-emoji">🤝</div>
+                <h3>Emotionally Aware</h3>
+                <p>Understands context. If you're frustrated, she's patient. If you're bored, she cracks a joke. She gets it.</p>
+            </div>
+            <div class="personality-card">
+                <div class="personality-emoji">⚡</div>
+                <h3>Just Does It</h3>
+                <p>No "how do I do that?" — she figures it out. Sees the screen, finds the button, clicks it. Action-first.</p>
+            </div>
+            <div class="personality-card">
+                <div class="personality-emoji">🇮🇳</div>
+                <h3>Hinglish Fluent</h3>
+                <p>Speaks your language — a natural mix of Hindi and English. Casual, friendly, and always real.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Tech Stack -->
+    <section id="tech">
+        <div class="reveal">
+            <div class="section-label">⚡ Tech Stack</div>
+            <h2 class="section-title">Built With</h2>
+            <p class="section-desc">Modern, fast, and reliable. IRA uses the best tools for the job.</p>
+        </div>
+        <div class="tech-grid reveal">
+            <div class="tech-item"><div class="tech-dot" style="background: var(--accent)"></div>Gemini 3.5 Flash</div>
+            <div class="tech-item"><div class="tech-dot" style="background: var(--accent-2)"></div>Python 3.10+</div>
+            <div class="tech-item"><div class="tech-dot" style="background: var(--green)"></div>Playwright</div>
+            <div class="tech-item"><div class="tech-dot" style="background: var(--accent-3)"></div>PyAutoGUI</div>
+            <div class="tech-item"><div class="tech-dot" style="background: var(--orange)"></div>MSS Screen Capture</div>
+            <div class="tech-item"><div class="tech-dot" style="background: var(--red)"></div>Gemini Live API</div>
+            <div class="tech-item"><div class="tech-dot" style="background: var(--accent)"></div>PySide6 HUD</div>
+            <div class="tech-item"><div class="tech-dot" style="background: var(--accent-2)"></div>Composio MCP</div>
+            <div class="tech-item"><div class="tech-dot" style="background: var(--green)"></div>Sarvam TTS</div>
+            <div class="tech-item"><div class="tech-dot" style="background: var(--accent-3)"></div>Computer Use</div>
+        </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="cta-section reveal">
+        <h2>Ready to Meet IRA?</h2>
+        <p>She's already on your desktop, waiting to help.</p>
+        <a href="#" class="btn btn-primary" onclick="launchIRA(); return false;">
+            <span>Launch IRA</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </a>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-content">
+            <div class="footer-left">
+                <div class="footer-logo">I</div>
+                <span class="footer-text">IRA — Intelligent Responsive Assistant</span>
+            </div>
+            <div class="footer-links">
+                <a href="#">GitHub</a>
+                <a href="#">Docs</a>
+                <a href="#">Built by Revant</a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // ── Terminal Animation ──
+        const terminalLines = [
+            { delay: 500,  html: '<span class="prompt">You ></span> <span class="cmd">open YouTube and play KGF songs</span>' },
+            { delay: 1200, html: '<span class="dim">  ◎ 👁 Reading screen...</span>' },
+            { delay: 2000, html: '<span class="dim">  ◎ 🧠 Thinking</span> <span class="dim">—</span> <span class="tool">[TOOL] browser_control(navigate, "youtube.com")</span>' },
+            { delay: 3000, html: '<span class="dim">  ◎ 🔧 Running</span> <span class="tool">browser_control</span> <span class="dim">—</span> <span class="ira">✓ Navigated to YouTube</span>' },
+            { delay: 3800, html: '<span class="dim">  ● 🧠 Thinking</span> <span class="dim">—</span> <span class="tool">[TOOL] browser_control(type, "KGF songs")</span>' },
+            { delay: 4600, html: '<span class="dim">  ◎ 🔧 Running</span> <span class="tool">browser_control</span> <span class="dim">—</span> <span class="ira">✓ Typed and pressed Enter</span>' },
+            { delay: 5400, html: '<span class="dim">  ○ 🧠 Thinking</span> <span class="dim">—</span> <span class="tool">[TOOL] browser_control(click, "a#video-title")</span>' },
+            { delay: 6200, html: '<span class="dim">  ● 🔧 Running</span> <span class="tool">browser_control</span> <span class="dim">—</span> <span class="ira">✓ Playing KGF songs</span>' },
+            { delay: 7200, html: '<span class="ira">  IRA > Haan, ho gaya! KGF ke gaane chal rahe hain. 🎵</span>' },
+        ];
+
+        function runTerminal() {
+            const terminal = document.getElementById('terminal');
+            terminal.innerHTML = '';
+            terminalLines.forEach((line, i) => {
+                setTimeout(() => {
+                    const div = document.createElement('div');
+                    div.className = 'terminal-line';
+                    div.innerHTML = line.html;
+                    div.style.animationDelay = '0s';
+                    terminal.appendChild(div);
+                    terminal.scrollTop = terminal.scrollHeight;
+                }, line.delay);
+            });
+        }
+
+        // Run terminal on load and repeat
+        runTerminal();
+        setInterval(runTerminal, 12000);
+
+        // ── Scroll Reveal ──
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, { threshold: 0.1 });
+
+        document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+        // ── Navbar Scroll ──
+        window.addEventListener('scroll', () => {
+            const nav = document.getElementById('navbar');
+            nav.classList.toggle('scrolled', window.scrollY > 50);
+        });
+
+        // ── Counter Animation ──
+        const counterObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const el = entry.target;
+                    const target = parseInt(el.dataset.target);
+                    const suffix = target >= 100 ? '+' : '';
+                    let current = 0;
+                    const step = Math.max(1, Math.floor(target / 40));
+                    const timer = setInterval(() => {
+                        current += step;
+                        if (current >= target) {
+                            current = target;
+                            clearInterval(timer);
+                        }
+                        el.textContent = current + suffix;
+                    }, 30);
+                    counterObserver.unobserve(el);
+                }
+            });
+        }, { threshold: 0.5 });
+
+        document.querySelectorAll('.stat-number').forEach(el => counterObserver.observe(el));
+
+        // ── Launch IRA ──
+        function launchIRA() {
+            try {
+                window.open('ira://launch', '_blank');
+            } catch(e) {
+                alert('IRA is already running on your desktop!');
+            }
+        }
+    </script>
+</body>
+</html>

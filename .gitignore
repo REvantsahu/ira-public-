@@ -1,0 +1,71 @@
+# Secrets
+.env
+.env.*
+*.env
+ira_api_keys.txt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+.agents/
+.opencode/
+
+# Logs
+*.log
+*.err
+server.log
+server.err
+web_gui.log
+web_gui.err.log
+
+# Runtime
+*.pid
+.ira_hud.pid
+state.json
+state_*.json
+ira_task_status.json
+ira_settings.json
+skills-lock.json
+gesture_config.json
+
+# Scratch/Temp
+scratch/
+tmp/
+temp/
+
+# Backups
+backup-*/
+
+# Conversations (privacy)
+conversations/
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Node
+node_modules/
+
+# WhatsApp auth
+whatsapp/auth/
+whatsapp/tmp/
+
+# Tests
+ira_hard_test/
+benchmark_report.json
+hard_test_report.json
+test_*.py
+check_mic.py
+
+# MCP server configs
+mcp_servers/

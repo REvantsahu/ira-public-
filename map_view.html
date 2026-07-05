@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IRA Maps</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a1a;
+            font-family: 'Segoe UI', sans-serif;
+            color: #e0e0e0;
+            overflow: hidden;
+        }
+        #map {
+            width: 100%;
+            height: 100vh;
+            z-index: 1;
+        }
+        /* Dark theme controls */
+        .leaflet-control-zoom a {
+            background: #1a1a2e !important;
+            color: #00d4ff !important;
+            border-color: #2a2a3e !important;
+        }
+        .leaflet-control-zoom a:hover {
+            background: #2a2a3e !important;
+        }
+        .leaflet-popup-content-wrapper {
+            background: #1a1a2e;
+            color: #e0e0e0;
+            border-radius: 8px;
+            border: 1px solid #2a2a3e;
+        }
+        .leaflet-popup-tip {
+            background: #1a1a2e;
+        }
+        .leaflet-popup-close-button {
+            color: #00d4ff !important;
+        }
+        .leaflet-control-attribution {
+            background: rgba(10, 10, 26, 0.8) !important;
+            color: #666 !important;
+            font-size: 9px;
+        }
+        .leaflet-control-attribution a {
+            color: #00d4ff !important;
+        }
+        /* Info panel */
+        #info-panel {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(10, 10, 26, 0.9);
+            border: 1px solid #2a2a3e;
+            border-radius: 8px;
+            padding: 10px 14px;
+            z-index: 1000;
+            max-width: 280px;
+            backdrop-filter: blur(10px);
+        }
+        #info-panel h3 {
+            color: #00d4ff;
+            font-size: 11px;
+            margin-bottom: 6px;
+            letter-spacing: 1px;
+        }
+        #info-panel .location-text {
+            color: #aaa;
+            font-size: 10px;
+            line-height: 1.4;
+        }
+        #info-panel .route-info {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid #2a2a3e;
+            font-size: 10px;
+        }
+        .route-mode {
+            display: inline-block;
+            padding: 2px 6px;
+            margin: 2px;
+            border-radius: 4px;
+            background: #1a1a2e;
+            border: 1px solid #2a2a3e;
+        }
+        .route-mode.active {
+            border-color: #00d4ff;
+            color: #00d4ff;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div id="info-panel">
+        <h3>IRA MAPS</h3>
+        <div class="location-text" id="location-text">Initializing...</div>
+        <div class="route-info" id="route-info" style="display:none;">
+            <div id="route-modes"></div>
+            <div id="route-summary" style="margin-top:4px; color:#00d4ff;"></div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize map centered on default location
+        var map = L.map('map', {
+            zoomControl: true,
+            attributionControl: true
+        }).setView([18.3972, 76.5678], 14);
+
+        // Dark tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap',
+            maxZoom: 19
+        }).addTo(map);
+
+        // State
+        var markers = [];
+        var routeLine = null;
+        var userMarker = null;
+        var userCircle = null;
+
+        // ═══════════════════════════════════════════════════════
+        //  API FUNCTIONS (called from Python bridge)
+        // ═══════════════════════════════════════════════════════
+
+        function setUserLocation(lat, lng, label) {
+            // Remove old user marker
+            if (userMarker) { map.removeLayer(userMarker); }
+            if (userCircle) { map.removeLayer(userCircle); }
+
+            // Blue accuracy circle
+            userCircle = L.circleMarker([lat, lng], {
+                radius: 12,
+                color: '#00d4ff',
+                fillColor: '#00d4ff',
+                fillOpacity: 0.15,
+                weight: 2
+            }).addTo(map);
+
+            // Blue dot marker
+            userMarker = L.circleMarker([lat, lng], {
+                radius: 7,
+                color: '#fff',
+                fillColor: '#00d4ff',
+                fillOpacity: 1,
+                weight: 2
+            }).addTo(map).bindPopup(label || "📍 Your Location");
+
+            map.setView([lat, lng], map.getZoom());
+            document.getElementById('location-text').textContent = label || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+        }
+
+        function addMarker(lat, lng, label, icon) {
+            var markerIcon = L.divIcon({
+                className: 'custom-marker',
+                html: `<div style="
+                    background: ${icon === 'user' ? '#00d4ff' : '#ff4444'};
+                    width: 12px; height: 12px; border-radius: 50%;
+                    border: 2px solid white; box-shadow: 0 0 6px rgba(0,0,0,0.5);
+                "></div>`,
+                iconSize: [16, 16],
+                iconAnchor: [8, 8]
+            });
+
+            var marker = L.marker([lat, lng], { icon: markerIcon })
+                .addTo(map)
+                .bindPopup(label);
+
+            markers.push(marker);
+            return markers.length - 1;
+        }
+
+        function clearMarkers() {
+            markers.forEach(m => map.removeLayer(m));
+            markers = [];
+        }
+
+        function drawRoute(coords, color) {
+            if (routeLine) { map.removeLayer(routeLine); }
+            color = color || '#00d4ff';
+            routeLine = L.polyline(coords, {
+                color: color,
+                weight: 4,
+                opacity: 0.8,
+                dashArray: '8, 6'
+            }).addTo(map);
+
+            // Fit map to route bounds
+            if (coords.length > 0) {
+                map.fitBounds(routeLine.getBounds(), { padding: [40, 40] });
+            }
+        }
+
+        function clearRoute() {
+            if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+            document.getElementById('route-info').style.display = 'none';
+        }
+
+        function clearMap() {
+            clearMarkers();
+            clearRoute();
+            if (userMarker) { map.removeLayer(userMarker); userMarker = null; }
+            if (userCircle) { map.removeLayer(userCircle); userCircle = null; }
+        }
+
+        function setView(lat, lng, zoom) {
+            map.setView([lat, lng], zoom || 14);
+        }
+
+        function showRouteInfo(walkTime, cycleTime, driveTime, distance) {
+            var info = document.getElementById('route-info');
+            var modes = document.getElementById('route-modes');
+            var summary = document.getElementById('route-summary');
+
+            modes.innerHTML = '';
+            if (walkTime) modes.innerHTML += `<span class="route-mode">🚶 ${walkTime}</span>`;
+            if (cycleTime) modes.innerHTML += `<span class="route-mode">🚲 ${cycleTime}</span>`;
+            if (driveTime) modes.innerHTML += `<span class="route-mode">🚗 ${driveTime}</span>`;
+
+            summary.textContent = distance ? `📏 ${distance}` : '';
+            info.style.display = 'block';
+        }
+
+        function updateInfoPanel(text) {
+            document.getElementById('location-text').textContent = text;
+        }
+
+        // ═══════════════════════════════════════════════════════
+        //  EXPOSE TO PYTHON (via QWebChannel or direct call)
+        // ═══════════════════════════════════════════════════════
+
+        window.iraMap = {
+            setUserLocation: setUserLocation,
+            addMarker: addMarker,
+            clearMarkers: clearMarkers,
+            drawRoute: drawRoute,
+            clearRoute: clearRoute,
+            clearMap: clearMap,
+            setView: setView,
+            showRouteInfo: showRouteInfo,
+            updateInfoPanel: updateInfoPanel
+        };
+
+        // Signal ready
+        console.log("IRA Maps ready");
+    </script>
+</body>
+</html>

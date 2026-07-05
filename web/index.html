@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>IRA - JARVIS Interface</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/jarvis-style.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <main class="shell scanlines grid-overlay">
+      <aside class="left-panel">
+        <div class="brand">
+          <div class="brand-mark holographic-text">IRA</div>
+          <div>
+            <div class="brand-title">Ira Agent</div>
+            <div class="brand-subtitle">Autonomous desktop control</div>
+          </div>
+        </div>
+
+<section class="avatar-panel">
+           <div class="avatar-status" id="statusLabel"></div>
+           <div class="jarvis-avatar" id="avatar">
+             <div class="jarvis-halo"></div>
+             <div class="jarvis-halo secondary"></div>
+             <div class="jarvis-face">
+               <div class="jarvis-eyes">
+                 <div class="jarvis-eye left"></div>
+                 <div class="jarvis-eye right"></div>
+               </div>
+             </div>
+           </div>
+         </section>
+
+<section class="system-panel holographic-panel">
+           <div class="metric">
+             <span>MODEL</span>
+             <strong id="modelName">Loading</strong>
+           </div>
+           <div class="metric">
+             <span>TOOLS</span>
+             <strong id="toolCount">--</strong>
+           </div>
+           <div class="metric">
+             <span>AUDIO</span>
+             <strong id="audioModel">Browser voice</strong>
+           </div>
+         </section>
+
+<section class="tool-list-panel holographic-panel">
+           <div class="panel-header">
+             <span>TOOL LIBRARY</span>
+             <div class="jarvis-button" id="refreshTools" style="font-size: 9px; padding: 4px 8px;">Refresh</div>
+           </div>
+           <div class="tool-list" id="toolLibrary"></div>
+         </section>
+      </aside>
+
+      <section class="chat-panel">
+        <header class="topbar">
+          <div>
+            <div class="eyebrow">Live workspace</div>
+            <h1>Talk, watch tools, keep control.</h1>
+          </div>
+          <div class="top-actions">
+            <button class="icon-button" id="newChatBtn" title="Start new chat">New Chat</button>
+            <button class="icon-button" id="historyBtn" title="Chat history">History</button>
+            <button class="icon-button" id="voiceToggle" title="Toggle voice mode">Mic</button>
+            <button class="icon-button" id="screenToggle" title="Include screen with message">Screen</button>
+          </div>
+        </header>
+
+        <div class="chat-feed" id="chatFeed">
+          <article class="message ira">
+            <div class="message-meta">IRA</div>
+            <div class="message-body">Namaste bhai. Main ready hoon. Message type kar, ya voice mode on karke bol.</div>
+          </article>
+        </div>
+
+        <form class="composer" id="composer">
+          <button type="button" class="round-button" id="listenButton" title="Voice input">Mic</button>
+          <textarea id="messageInput" rows="1" placeholder="Ask IRA to chat or perform a desktop task..."></textarea>
+          <button type="submit" class="send-button" id="sendBtn">Send</button>
+          <button type="button" class="stop-button" id="stopBtn" style="display:none">Stop</button>
+        </form>
+      </section>
+
+      <aside class="right-panel">
+        <div class="section-title">Execution Timeline</div>
+        <div class="timeline" id="timeline"></div>
+<div class="native-audio holographic-panel">
+           <div class="section-title">AUDIO WAVEFORM</div>
+           <div class="waveform-container" id="waveformContainer">
+             <div class="waveform-bars" id="waveformBars">
+               <!-- Waveform bars will be generated dynamically -->
+             </div>
+           </div>
+         </div>
+      </aside>
+    </main>
+
+    <!-- Voice Mode Overlay -->
+    <div id="voiceOverlay" class="voice-overlay hidden">
+      <div class="voice-interface">
+        <div class="voice-main">
+          <button class="voice-close-btn" id="voiceCloseBtn" title="Exit voice mode">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            <span>Cancel</span>
+          </button>
+          <div class="voice-mic-area">
+            <div class="voice-mic-ring outer"></div>
+            <div class="voice-mic-ring mid"></div>
+            <button class="voice-mic-btn" id="voiceMicBtn">
+              <svg class="voice-mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <rect x="9" y="2" width="6" height="11" rx="3"/>
+                <path d="M5 10a7 7 0 0 0 14 0"/>
+                <line x1="12" y1="19" x2="12" y2="22"/>
+                <line x1="8" y1="22" x2="16" y2="22"/>
+              </svg>
+            </button>
+          </div>
+          <div class="voice-status-text" id="voiceStatusText">Tap to speak</div>
+          <div class="voice-transcript" id="voiceTranscript"></div>
+        </div>
+        <div class="voice-sidebar">
+          <div class="voice-sidebar-header">
+            <span class="voice-sidebar-title">EXECUTION LOG</span>
+            <span class="voice-sidebar-badge" id="voiceToolCount">0</span>
+          </div>
+          <div class="voice-tool-list" id="voiceToolList">
+            <div class="voice-tool-empty">Waiting for your command...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chat History Drawer -->
+    <div id="historyDrawer" class="history-drawer">
+      <div class="history-panel">
+        <div class="history-header">
+          <span class="history-title">CHAT HISTORY</span>
+          <button class="history-close" id="historyClose">&times;</button>
+        </div>
+        <div class="history-search">
+          <input type="text" id="historySearch" placeholder="Search chats..." class="history-search-input" />
+        </div>
+        <div class="history-list" id="historyList">
+          <div class="history-empty">No conversations yet</div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/app.js"></script>
+  <!-- Knowledge Base Tooltip -->
+<div id="knowledgeTooltip" class="knowledge-tooltip">
+  <div class="knowledge-header">
+    <span class="knowledge-title">IRA Knowledge Base</span>
+    <button class="knowledge-close" id="knowledgeClose">&times;</button>
+  </div>
+  <div class="knowledge-content">
+    <div class="knowledge-section">
+      <h3>About Revant Sahu</h3>
+      <p>15-year-old visionary developer, AI pioneer, and founder of Nagchetra Labs. Creator of SahuAI and Edlix AI platforms.</p>
+    </div>
+    <div class="knowledge-section">
+      <h3>Nagchetra Labs</h3>
+      <p>Indian student-driven AI initiative building educational tools like Edlix AI powered by Kesar LLM - India's own fine-tuned language model.</p>
+    </div>
+    <div class="knowledge-section">
+      <h3>Key Technologies</h3>
+      <p>Firebase • Cloudflare Workers • HuggingFace • Groq • Cerebras • Sarvam TTS • Google Colab + LoRA</p>
+    </div>
+    <div class="knowledge-section">
+      <h3>Innovative Features</h3>
+      <p>Educationalised Gaming • Immersive Quiz Mode • AI Notes + Mind Maps • Live Chat Widgets • The Meditator • SahuPost</p>
+    </div>
+  </div>
+</div>
+
+<style>
+  .knowledge-tooltip {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 300px;
+    max-height: 400px;
+    background: rgba(0, 10, 20, 0.9);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    z-index: 10000;
+    overflow-y: auto;
+    box-shadow: 0 0 20px rgba(0,255,255,0.2);
+    transform: translateY(100px);
+    opacity: 0;
+    transition: all 0.5s ease;
+    pointer-events: none;
+  }
+  
+  .knowledge-tooltip.visible {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: all;
+  }
+  
+  .knowledge-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(90deg, transparent, rgba(0,255,255,0.1), transparent);
+  }
+  
+  .knowledge-title {
+    font-family: var(--font-display);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--jarvis-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  
+  .knowledge-close {
+    background: none;
+    border: none;
+    color: var(--jarvis-danger);
+    font-size: 18px;
+    cursor: pointer;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+  }
+  
+  .knowledge-close:hover {
+    background: rgba(255,0,64,0.2);
+  }
+  
+  .knowledge-section {
+    padding: 12px 15px;
+  }
+  
+  .knowledge-section h3 {
+    font-family: var(--font-display);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--jarvis-secondary);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    letter-spacing: 0.05em;
+  }
+  
+  .knowledge-section p {
+    line-height: 1.4;
+    color: var(--text-dim);
+  }
+  
+  .knowledge-section:not(:last-child) {
+    border-bottom: 1px solid rgba(0,255,255,0.1);
+  }
+  
+  /* Pulse animation for knowledge button */
+  @knowledge-pulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+  }
+  
+  .knowledge-pulse {
+    animation: knowledge-pulse 3s ease-in-out infinite;
+  }
+</style>
+
+<script>
+  // Knowledge tooltip functionality
+  document.addEventListener('DOMContentLoaded', function() {
+    const knowledgeTooltip = document.getElementById('knowledgeTooltip');
+    const knowledgeClose = document.getElementById('knowledgeClose');
+    
+    // Show tooltip after delay
+    setTimeout(() => {
+      knowledgeTooltip.classList.add('visible');
+      knowledgeTooltip.classList.add('knowledge-pulse');
+    }, 3000);
+    
+    // Hide on close
+    knowledgeClose.addEventListener('click', () => {
+      knowledgeTooltip.classList.remove('visible');
+      knowledgeTooltip.classList.remove('knowledge-pulse');
+    });
+    
+    // Auto-hide after 15 seconds
+    setTimeout(() => {
+      knowledgeTooltip.classList.remove('visible');
+      knowledgeTooltip.classList.remove('knowledge-pulse');
+    }, 15000);
+  });
+</script>
+</body>
+</html>
