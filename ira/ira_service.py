@@ -63,12 +63,37 @@ def _is_process_alive(pid: int) -> bool:
         return False
 
 
+def toggle_hud_via_hotkey():
+    """Simulate Ctrl+Shift+I globally using ctypes (Win32) to toggle visibility."""
+    try:
+        import ctypes
+        import time
+        print("Sending global toggle hotkey (Ctrl+Shift+I) to running instance...")
+        VK_CONTROL = 0x11
+        VK_SHIFT = 0x10
+        VK_I = 0x49
+        KEYEVENTF_KEYUP = 0x0002
+        
+        # Press keys
+        ctypes.windll.user32.keybd_event(VK_CONTROL, 0, 0, 0)
+        ctypes.windll.user32.keybd_event(VK_SHIFT, 0, 0, 0)
+        ctypes.windll.user32.keybd_event(VK_I, 0, 0, 0)
+        time.sleep(0.05)
+        # Release keys
+        ctypes.windll.user32.keybd_event(VK_I, 0, KEYEVENTF_KEYUP, 0)
+        ctypes.windll.user32.keybd_event(VK_SHIFT, 0, KEYEVENTF_KEYUP, 0)
+        ctypes.windll.user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
+    except Exception as e:
+        print(f"Error simulating hotkey: {e}")
+
+
 def launch_background():
     """Launch HUD as a background process using pythonw.exe."""
     # Check if already running
     pid = _read_pid()
     if pid and _is_process_alive(pid):
         print(f"IRA HUD is already running (PID: {pid})")
+        toggle_hud_via_hotkey()
         return
 
     pythonw = _get_pythonw()

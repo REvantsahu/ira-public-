@@ -177,6 +177,10 @@ Window {
     // ── WINDOW VISIBILITY ────────────────────────
     property bool toolWindowShown: false
     property bool memoryWindowShown: false
+    property bool phoneBridgeWindowShown: false
+    property string phoneBridgeUrl: ""
+    property string phoneBridgePin: ""
+    property string phoneBridgeQr: ""
     property bool leftPanelShown: false
     property string consoleLog: ""
 
@@ -302,6 +306,7 @@ Window {
         }
         if (toolWindowShown) widgets.push(toolWindow)
         if (memoryWindowShown) widgets.push(memoryWindow)
+        if (phoneBridgeWindowShown) widgets.push(phoneBridgeWindow)
         if (searchWindowShown) widgets.push(searchWindow)
         if (leftPanelShown) widgets.push(leftPanel)
         if (isVoiceMode) widgets.push(voiceOverlay)
@@ -1764,6 +1769,29 @@ Window {
                             }
                         }
 
+                        // Create Desktop Shortcut button
+                        Rectangle {
+                            Layout.fillWidth: true; height: 24; radius: 4
+                            color: shortcutMa.containsMouse ? Qt.rgba(0, 1, 1, 0.2) : Qt.rgba(0, 1, 1, 0.06)
+                            border.color: Qt.rgba(0, 1, 1, 0.2); border.width: 1
+                            Text {
+                                anchors.centerIn: parent
+                                text: "🖥️ Create Desktop Shortcut"
+                                color: Qt.rgba(0, 1, 1, 0.6)
+                                font { pixelSize: 8; family: "Consolas"; bold: true }
+                            }
+                            MouseArea {
+                                id: shortcutMa
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: {
+                                    if (bridge.createDesktopShortcut()) {
+                                        bridge.playSound("click")
+                                    }
+                                }
+                            }
+                        }
+
                         // Hologram Theme Selector
                         RowLayout {
                             spacing: 8
@@ -1858,6 +1886,35 @@ Window {
                                             settings.avatar.theme = "purple"
                                             bridge.saveSettings(JSON.stringify(settings))
                                         }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Connect with Phone button
+                        Rectangle {
+                            Layout.fillWidth: true; height: 24; radius: 4
+                            color: phoneBridgeMa.containsMouse ? Qt.rgba(0, 1, 1, 0.2) : Qt.rgba(0, 1, 1, 0.06)
+                            border.color: Qt.rgba(0, 1, 1, 0.2); border.width: 1
+                            Text {
+                                anchors.centerIn: parent
+                                text: "📱 Connect with Phone"
+                                color: Qt.rgba(0, 1, 1, 0.6)
+                                font { pixelSize: 8; family: "Consolas"; bold: true }
+                            }
+                            MouseArea {
+                                id: phoneBridgeMa
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: {
+                                    var res = JSON.parse(bridge.startPhoneBridge())
+                                    if (res.ok) {
+                                        phoneBridgeUrl = res.url
+                                        phoneBridgePin = res.pin
+                                        phoneBridgeQr = res.qr_path + "?t=" + Date.now()
+                                        phoneBridgeWindowShown = true
+                                        registerHotspots()
+                                        hotspotTimer.start()
                                     }
                                 }
                             }
@@ -2164,6 +2221,7 @@ Window {
             }
 
             property bool userAtBottom: true
+            property bool _programmaticScroll: false
 
             function isAtBottom(): bool {
                 return (contentHeight <= height) || (contentY + height >= contentHeight - 40)
@@ -2171,17 +2229,21 @@ Window {
 
             function smartScroll() {
                 if (userAtBottom) {
+                    _programmaticScroll = true
                     positionViewAtEnd()
+                    _programmaticScroll = false
                 }
             }
 
             function forceScrollToBottom() {
                 userAtBottom = true
+                _programmaticScroll = true
                 positionViewAtEnd()
+                _programmaticScroll = false
             }
 
             onContentYChanged: {
-                if (dragging || flicking || moving) {
+                if (!_programmaticScroll) {
                     userAtBottom = isAtBottom()
                 }
             }
@@ -2399,6 +2461,9 @@ Window {
 
                     property string msgImagePath: (model && model.imagePath !== undefined) ? model.imagePath : ""
                     property string msgLargeText: (model && model.largeText !== undefined) ? model.largeText : ""
+                    property string msgText: (model && model.text !== undefined) ? model.text : ""
+                    property bool msgIsThinking: (model && model.isThinking !== undefined) ? model.isThinking : false
+                    property string msgToolLogs: (model && model.toolLogs !== undefined) ? model.toolLogs : ""
 
                     anchors.right: isUser ? parent.right : undefined
                     anchors.rightMargin: isUser ? 8 : 0
@@ -2433,14 +2498,14 @@ Window {
                             Item { Layout.fillWidth: true }
                             
                             Text {
-                                visible: isUser && model.imagePath !== "" && model.imagePath !== "[]"
+                                visible: isUser && bubble.msgImagePath !== "" && bubble.msgImagePath !== "[]"
                                 text: "🖼 Image Attached"
                                 color: Qt.rgba(0, 1, 1, 0.6)
                                 font { pixelSize: 8; family: "Consolas" }
                             }
                             
                             Text {
-                                visible: isUser && model.largeText !== "" && model.largeText !== "[]"
+                                visible: isUser && bubble.msgLargeText !== "" && bubble.msgLargeText !== "[]"
                                 text: "📄 Text Attached"
                                 color: Qt.rgba(0, 1, 1, 0.6)
                                 font { pixelSize: 8; family: "Consolas" }
@@ -2463,7 +2528,7 @@ Window {
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
-                                        bridge.copyToClipboard(model.text)
+                                        bridge.copyToClipboard(bubble.msgText)
                                         bridge.playSound("click")
                                     }
                                 }
@@ -2521,7 +2586,7 @@ Window {
                             implicitHeight: streamingCursor.visible ? 4 : 0
                             Text {
                                 id: streamingCursor
-                                visible: !isUser && model.isThinking && model.text !== ""
+                                visible: !isUser && bubble.msgIsThinking && bubble.msgText !== ""
                                 text: "▌"
                                 color: "#00d4ff"
                                 font { pixelSize: 11; family: "Consolas"; bold: true }
@@ -2536,7 +2601,7 @@ Window {
 
                         Text {
                             id: messageText
-                            text: model.text
+                            text: bubble.msgText
                             color: isUser ? "#E0F7FA" : "#B0D0E0"
                             font { pixelSize: 11; family: "Consolas" }
                             wrapMode: Text.WordWrap
@@ -2546,7 +2611,7 @@ Window {
 
                         // Legacy toolLogs (for backward compat)
                         ColumnLayout {
-                            visible: !isUser && model.toolLogs !== ""
+                            visible: !isUser && bubble.msgToolLogs !== ""
                             Layout.fillWidth: true
                             spacing: 0
 
@@ -2600,7 +2665,7 @@ Window {
                                 Text {
                                     id: logContent2
                                     anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; margins: 8 }
-                                    text: model.toolLogs
+                                    text: bubble.msgToolLogs
                                     color: "#00CCBB"
                                     font { pixelSize: 9; family: "Consolas" }
                                     wrapMode: Text.WordWrap
@@ -2613,7 +2678,7 @@ Window {
 
                         // Thinking indicator (IRA thinking, no text yet)
                         RowLayout {
-                            visible: !isUser && model.isThinking && model.text === "" && model.toolLogs === ""
+                            visible: !isUser && bubble.msgIsThinking && bubble.msgText === "" && bubble.msgToolLogs === ""
                             spacing: 6
                             Rectangle {
                                 width: 4; height: 14; radius: 2
@@ -2679,8 +2744,7 @@ Window {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
-                        chatListView.userAtBottom = true
-                        chatListView.positionViewAtEnd()
+                        chatListView.forceScrollToBottom()
                     }
                 }
             }
@@ -3084,15 +3148,29 @@ Window {
                 width: 36; height: 36; radius: 18
                 opacity: isBooting ? 0 : 1.0
                 scale: isBooting ? 0.3 : 1.0
-                color: isProcessing ? Qt.rgba(1, 0.27, 0.27, 0.12) : (sendDockMa.containsMouse ? Qt.rgba(0, 1, 1, 0.15) : Qt.rgba(0, 0, 0, 0.2))
-                border.color: isProcessing ? Qt.rgba(1, 0.27, 0.27, 0.35) : Qt.rgba(0, 1, 1, 0.22); border.width: 1
+                readonly property bool isStopState: isProcessing || (isVoiceMode && (voiceState === "speaking" || voiceState === "thinking"))
+                color: isStopState ? Qt.rgba(1, 0.27, 0.27, 0.12) : (sendDockMa.containsMouse ? Qt.rgba(0, 1, 1, 0.15) : Qt.rgba(0, 0, 0, 0.2))
+                border.color: isStopState ? Qt.rgba(1, 0.27, 0.27, 0.35) : Qt.rgba(0, 1, 1, 0.22); border.width: 1
                 Text {
                     anchors.centerIn: parent
-                    text: isProcessing ? "⏹" : "➤"
-                    color: isProcessing ? "#FF4444" : "#00FFFF"
+                    text: sendBtn.isStopState ? "⏹" : "➤"
+                    color: sendBtn.isStopState ? "#FF4444" : "#00FFFF"
                     font.pixelSize: 14
                 }
-                MouseArea { id: sendDockMa; anchors.fill: parent; hoverEnabled: true; onClicked: { activateWindow(); isProcessing ? bridge.stopProcessing() : sendMsg(); bridge.playSound("click") } }
+                MouseArea { 
+                    id: sendDockMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: { 
+                        activateWindow()
+                        if (sendBtn.isStopState) {
+                            bridge.stopProcessing()
+                        } else {
+                            sendMsg()
+                        }
+                        bridge.playSound("click")
+                    } 
+                }
                 Behavior on color { ColorAnimation { duration: 120 } }
                 Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.OutCubic } }
                 Behavior on scale {
@@ -3102,7 +3180,7 @@ Window {
                 ToolTip {
                     id: ttSend
                     visible: sendDockMa.containsMouse
-                    text: isProcessing ? "Stop Processing" : "Send Message"
+                    text: sendBtn.isStopState ? "Stop / Interrupt" : "Send Message"
                     delay: 400
                     y: -height - 8
                     x: parent.width / 2 - width / 2
@@ -3148,7 +3226,7 @@ Window {
                 color: newChatDockMa.containsMouse ? Qt.rgba(0, 1, 0.5, 0.12) : Qt.rgba(0, 0, 0, 0.2)
                 border.color: Qt.rgba(0, 1, 0.5, 0.22); border.width: 1
                 Text { anchors.centerIn: parent; text: "🔄"; font.pixelSize: 14 }
-                MouseArea { id: newChatDockMa; anchors.fill: parent; hoverEnabled: true; onClicked: { bridge.newChat(getChatModelJson(), getNodeModelJson()); chatModel.clear(); nodeModel.clear(); attachedImagesModel.clear(); attachedTextsModel.clear(); attachedImage = ""; attachedLargeText = ""; attachedLargeTextPreview = ""; chatListView.positionViewAtEnd(); bridge.playSound("click") } }
+                MouseArea { id: newChatDockMa; anchors.fill: parent; hoverEnabled: true; onClicked: { bridge.newChat(getChatModelJson(), getNodeModelJson()); chatModel.clear(); nodeModel.clear(); attachedImagesModel.clear(); attachedTextsModel.clear(); attachedImage = ""; attachedLargeText = ""; attachedLargeTextPreview = ""; chatListView.forceScrollToBottom(); bridge.playSound("click") } }
                 Behavior on color { ColorAnimation { duration: 120 } }
                 Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.OutCubic } }
                 Behavior on scale {
@@ -3419,6 +3497,106 @@ Window {
             }
 
             Text { anchors.centerIn: parent; visible: memoryModel.count === 0; text: "No memories saved yet"; color: Qt.rgba(0, 1, 1, 0.2); font { pixelSize: 11; family: "Consolas" } }
+        }
+    }
+
+    // ═══════════════════════════════════════════════
+    //  PHONE CONNECTION BRIDGE WINDOW
+    // ═══════════════════════════════════════════════
+    Rectangle {
+        id: phoneBridgeWindow
+        x: root.width / 2 - 180; y: root.height / 2 - 180
+        width: 360; height: 360; radius: 12
+        color: Qt.rgba(0, 0.031, 0.071, 0.96)
+        border.color: Qt.rgba(0, 1, 1, 0.18); border.width: 1
+        visible: phoneBridgeWindowShown; z: 40
+
+        Rectangle {
+            id: phoneTitleBar
+            anchors { top: parent.top; left: parent.left; right: parent.right }
+            height: 32; color: Qt.rgba(0, 0, 0, 0.4)
+
+            Rectangle { anchors.left: parent.left; anchors.bottom: parent.bottom; width: 12; height: 12; color: parent.color }
+            Rectangle { anchors.right: parent.right; anchors.bottom: parent.bottom; width: 12; height: 12; color: parent.color }
+
+            MouseArea {
+                anchors.fill: parent; z: 0
+                property real offX; property real offY
+                onPressed: function(mouse) { offX = mouse.x; offY = mouse.y }
+                onPositionChanged: function(mouse) {
+                    if (pressed) { phoneBridgeWindow.x += mouse.x - offX; phoneBridgeWindow.y += mouse.y - offY }
+                }
+            }
+
+            RowLayout {
+                anchors { left: parent.left; leftMargin: 12; verticalCenter: parent.verticalCenter }
+                spacing: 6; z: 1
+                Rectangle {
+                    width: 10; height: 10; radius: 5
+                    color: closePhoneMa.containsMouse ? "#FF5F57" : Qt.rgba(1, 0.37, 0.34, 0.55)
+                    MouseArea { id: closePhoneMa; anchors.fill: parent; hoverEnabled: true; onClicked: { phoneBridgeWindowShown = false; registerHotspots(); hotspotTimer.start() } }
+                }
+                Rectangle { width: 10; height: 10; radius: 5; color: Qt.rgba(1, 0.74, 0.18, 0.35) }
+                Rectangle { width: 10; height: 10; radius: 5; color: Qt.rgba(0.16, 0.79, 0.25, 0.35) }
+            }
+
+            Text {
+                anchors.centerIn: parent; z: 1
+                text: "PHONE CONNECTION BRIDGE"; color: Qt.rgba(0, 1, 1, 0.45)
+                font { pixelSize: 9; family: "Consolas"; letterSpacing: 1.5; bold: true }
+            }
+        }
+
+        ColumnLayout {
+            anchors { top: phoneTitleBar.bottom; left: parent.left; right: parent.right; bottom: parent.bottom; margins: 16 }
+            spacing: 12
+
+            Text {
+                Layout.fillWidth: true
+                text: "Scan QR code with your phone camera to link your phone, or open the link manually."
+                color: Qt.rgba(0, 1, 1, 0.4)
+                font { pixelSize: 9; family: "Consolas" }
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+            }
+
+            // QR Code display container
+            Rectangle {
+                Layout.alignment: Qt.AlignHCenter
+                width: 180; height: 180; radius: 8
+                color: "white"
+                border.color: Qt.rgba(0, 1, 1, 0.3); border.width: 1
+
+                Image {
+                    anchors.fill: parent
+                    anchors.margins: 6
+                    source: phoneBridgeQr
+                    smooth: true
+                    cache: false
+                }
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 3
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Manual URL: " + phoneBridgeUrl
+                    color: "#00d4ff"
+                    font { pixelSize: 9; family: "Consolas"; bold: true }
+                    horizontalAlignment: Text.AlignHCenter
+                    elide: Text.ElideRight
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Connection PIN: " + phoneBridgePin
+                    color: "#00ff88"
+                    font { pixelSize: 10; family: "Consolas"; bold: true }
+                    horizontalAlignment: Text.AlignHCenter
+                }
+            }
         }
     }
 
@@ -4249,7 +4427,7 @@ Window {
                     }
                 }
             }
-            chatListView.positionViewAtEnd()
+            chatListView.forceScrollToBottom()
             registerHotspots()
             hotspotTimer.start()
         }

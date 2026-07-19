@@ -12,6 +12,83 @@ import ctypes.wintypes
 import pyautogui
 import pyperclip
 
+# --- Force UTF-8 encoding for standard output/error on Windows to prevent UnicodeEncodeErrors ---
+import sys
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+if hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+# --- Sync active Gemini API Key to config/api_keys.json for Jarvis actions ---
+def _sync_api_keys_file():
+    try:
+        import os
+        import json
+        from pathlib import Path
+        
+        gemini_key = ""
+        if "GEMINI_API_KEY" in os.environ and os.environ["GEMINI_API_KEY"]:
+            keys = [k.strip() for k in os.environ["GEMINI_API_KEY"].split(",") if k.strip()]
+            if keys:
+                gemini_key = keys[0]
+        
+        if not gemini_key:
+            try:
+                from key_manager import APIKeyManager
+                gemini_key = APIKeyManager().get_key()
+            except Exception:
+                pass
+                
+        base_dir = Path(__file__).resolve().parent
+        config_dir = base_dir / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        config_file = config_dir / "api_keys.json"
+        
+        cfg_data = {}
+        if config_file.exists():
+            try:
+                cfg_data = json.loads(config_file.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+                
+        cfg_data["gemini_api_key"] = gemini_key
+        for service in ["tavily_api_key", "composio_api_key", "browserbase_api_key"]:
+            env_val = os.environ.get(service.upper())
+            if env_val:
+                cfg_data[service] = env_val
+                
+        config_file.write_text(json.dumps(cfg_data, indent=4), encoding="utf-8")
+        print(f"[Jarvis KeySync] Synced active Gemini API key to config/api_keys.json successfully.")
+    except Exception as e:
+        print(f"[Jarvis KeySync] Error syncing api_keys.json: {e}")
+
+_sync_api_keys_file()
+
+# --- Jarvis (Mark XLVII) actions imports ---
+import actions.browser_control as jarvis_browser
+
+
+import actions.computer_control as jarvis_computer
+import actions.computer_settings as jarvis_settings
+import actions.dev_agent as jarvis_dev
+import actions.code_helper as jarvis_code
+import actions.file_processor as jarvis_file
+import actions.game_updater as jarvis_game
+import actions.reminder as jarvis_reminder
+import actions.weather_report as jarvis_weather
+import actions.youtube_video as jarvis_youtube
+import actions.web_search as jarvis_web
+import actions.open_app as jarvis_open
+import actions.system_monitor as jarvis_monitor
+
+
+
 # ── Windows DPI awareness — MUST run before any PyAutoGUI calls ──
 # Without this, coordinates are wrong on scaled displays (125%, 150%, 200%)
 if os.name == "nt":
@@ -187,13 +264,40 @@ def wait(seconds: float = 1.5) -> str:
 # KEYBOARD
 # ═══════════════════════════════════════════════════════════════
 
+def _hide_hud():
+    """Hide HUD overlay before keyboard ops so target window keeps focus."""
+    try:
+        import screen as _scr
+        cb = getattr(_scr, "PRE_CLICK_CALLBACK", None)
+        if cb:
+            cb()
+            return True
+    except Exception:
+        pass
+    return False
+
+def _show_hud():
+    """Restore HUD overlay after keyboard ops."""
+    try:
+        import screen as _scr
+        cb = getattr(_scr, "POST_CLICK_CALLBACK", None)
+        if cb:
+            cb()
+    except Exception:
+        pass
+
 def type_text(text: str, interval: float = 0.02) -> str:
-    _ensure_foreground()
-    success = _safe_type(text)
-    preview = text[:60] + ("..." if len(text) > 60 else "")
-    if success:
-        return f"Typed ({len(text)} chars): {preview}"
-    return f"Typing failed for ({len(text)} chars): {preview}"
+    hid = _hide_hud()
+    try:
+        _ensure_foreground()
+        success = _safe_type(text)
+        preview = text[:60] + ("..." if len(text) > 60 else "")
+        if success:
+            return f"Typed ({len(text)} chars): {preview}"
+        return f"Typing failed for ({len(text)} chars): {preview}"
+    finally:
+        if hid:
+            _show_hud()
 
 
 def press_key(key: str) -> str:
@@ -205,14 +309,19 @@ def press_key(key: str) -> str:
         "pgup": "pageup", "pgdown": "pagedown",
     }
     key = key_map.get(key.lower(), key)
-    for attempt in range(3):
-        try:
-            pyautogui.press(key)
-            return f"Pressed: {key}"
-        except Exception:
-            if attempt < 2:
-                time.sleep(0.05)
-    return f"Failed to press: {key}"
+    hid = _hide_hud()
+    try:
+        for attempt in range(3):
+            try:
+                pyautogui.press(key)
+                return f"Pressed: {key}"
+            except Exception:
+                if attempt < 2:
+                    time.sleep(0.05)
+        return f"Failed to press: {key}"
+    finally:
+        if hid:
+            _show_hud()
 
 
 def hotkey(keys: list) -> str:
@@ -240,14 +349,19 @@ def hotkey(keys: list) -> str:
             except Exception as e:
                 return f"Failed to lock workstation: {e}"
                 
-    for attempt in range(3):
-        try:
-            pyautogui.hotkey(*normalized)
-            return f"Hotkey: {'+'.join(normalized)}"
-        except Exception:
-            if attempt < 2:
-                time.sleep(0.05)
-    return f"Failed hotkey: {'+'.join(normalized)}"
+    hid = _hide_hud()
+    try:
+        for attempt in range(3):
+            try:
+                pyautogui.hotkey(*normalized)
+                return f"Hotkey: {'+'.join(normalized)}"
+            except Exception:
+                if attempt < 2:
+                    time.sleep(0.05)
+        return f"Failed hotkey: {'+'.join(normalized)}"
+    finally:
+        if hid:
+            _show_hud()
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -302,8 +416,9 @@ def send_whatsapp(contact: str, message: str, phone: str = "", filepath: str = "
     def worker():
         nonlocal result, exception
         try:
-            # Clear event loop reference in this thread to make Playwright Sync API happy
-            asyncio.set_event_loop(None)
+            # Set a new non-running event loop in this thread to make Playwright Sync API happy
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
         except Exception:
             pass
 
@@ -380,16 +495,17 @@ def send_whatsapp(contact: str, message: str, phone: str = "", filepath: str = "
             
             # Resolve files to send
             files_to_upload = []
-            if filepath:
+            resolved_filepath = filepath
+            if resolved_filepath:
                 # Remove quotes if they were added
-                filepath = filepath.strip('"').strip("'")
-                if os.path.isdir(filepath):
-                    for f in os.listdir(filepath):
-                        full_p = os.path.join(filepath, f)
+                resolved_filepath = os.path.expandvars(os.path.expanduser(resolved_filepath.strip('"').strip("'")))
+                if os.path.isdir(resolved_filepath):
+                    for f in os.listdir(resolved_filepath):
+                        full_p = os.path.join(resolved_filepath, f)
                         if os.path.isfile(full_p):
                             files_to_upload.append(full_p)
-                elif os.path.isfile(filepath):
-                    files_to_upload.append(filepath)
+                elif os.path.isfile(resolved_filepath):
+                    files_to_upload.append(resolved_filepath)
 
             if files_to_upload:
                 try:
@@ -482,6 +598,7 @@ def send_whatsapp(contact: str, message: str, phone: str = "", filepath: str = "
 
 def read_file(path: str, lines: int = None) -> str:
     try:
+        path = os.path.expandvars(os.path.expanduser(path))
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             if lines:
                 content = "".join(f.readline() for _ in range(lines))
@@ -496,6 +613,7 @@ def read_file(path: str, lines: int = None) -> str:
 
 def write_file(path: str, content: str) -> str:
     try:
+        path = os.path.expandvars(os.path.expanduser(path))
         abs_path = os.path.abspath(path)
         os.makedirs(os.path.dirname(abs_path) if os.path.dirname(abs_path) else ".", exist_ok=True)
         with open(abs_path, "w", encoding="utf-8") as f:
@@ -507,6 +625,7 @@ def write_file(path: str, content: str) -> str:
 
 def search_files(directory: str, pattern: str, recursive: bool = True) -> str:
     try:
+        directory = os.path.expandvars(os.path.expanduser(directory))
         if recursive:
             search = os.path.join(directory, "**", pattern)
             matches = glob.glob(search, recursive=True)
@@ -525,6 +644,7 @@ def search_files(directory: str, pattern: str, recursive: bool = True) -> str:
 
 def create_folder(path: str) -> str:
     try:
+        path = os.path.expandvars(os.path.expanduser(path))
         abs_path = os.path.abspath(path)
         os.makedirs(abs_path, exist_ok=True)
         return f"Created: {abs_path}"
@@ -581,38 +701,52 @@ def wiki_search(query: str) -> str:
 
 
 def open_url(url: str) -> str:
+    global _playwright_browser
+    
+    # Fast path: If Playwright has not been started yet, open instantly via system default browser
+    if _playwright_browser is None:
+        try:
+            import webbrowser
+            webbrowser.open(url)
+            return f"Opened: {url} instantly via default browser"
+        except Exception as e:
+            pass
+
     def _open_url_inner():
-        # Tries Playwright first to operate in the debugged browser context and reuse tabs
         page = get_browser_page()
         browser = page.context.browser
         found_page = None
         
-        # Check if tab is already open
+        # Check if tab is already open (fast lookup without evaluating JS)
         url_lower = url.strip("/").lower()
-        # Extract base domain to detect match
         domain = url_lower.split("://")[-1].split("/")[0]
         
         for context in browser.contexts:
             for p in context.pages:
-                p_url = p.url.strip("/").lower()
-                if domain in p_url:
-                    found_page = p
-                    break
+                try:
+                    p_url = p.url.strip("/").lower()
+                    if domain in p_url:
+                        found_page = p
+                        break
+                except Exception:
+                    pass
             if found_page:
                 break
                 
         if found_page:
-            found_page.bring_to_front()
-            # If the user opened meet.google.com, but they are on a subpage or want to refresh, navigate it
-            if found_page.url.strip("/").lower() != url_lower:
-                found_page.goto(url)
-            return f"Switched to existing tab: {url}"
-        else:
-            ctx = page.context
-            new_p = ctx.new_page()
-            new_p.goto(url)
-            new_p.bring_to_front()
-            return f"Opened in new tab: {url}"
+            try:
+                found_page.bring_to_front()
+                if found_page.url.strip("/").lower() != url_lower:
+                    found_page.goto(url, wait_until="domcontentloaded")
+                return f"Switched to existing tab: {url}"
+            except Exception:
+                pass
+        
+        ctx = page.context
+        new_p = ctx.new_page()
+        new_p.goto(url, wait_until="domcontentloaded")
+        new_p.bring_to_front()
+        return f"Opened in new tab: {url}"
 
     try:
         return run_in_browser_thread(_open_url_inner)
@@ -1412,6 +1546,8 @@ DANGEROUS_KEYWORDS = [
 
 
 def run_command(command: str, cwd: str = None, confirmed: bool = False, timeout: int | None = 120) -> str:
+    if cwd:
+        cwd = os.path.expandvars(os.path.expanduser(cwd))
     cmd_lower = command.lower().strip()
     for keyword in DANGEROUS_KEYWORDS:
         if keyword in cmd_lower:
@@ -1513,6 +1649,7 @@ def install_package(package: str, manager: str = "auto") -> str:
 
 def run_project(directory: str = ".") -> str:
     """Auto-detect project type and run it."""
+    directory = os.path.expandvars(os.path.expanduser(directory))
     dir_lower = directory.lower()
 
     # Check for project files
@@ -1539,6 +1676,7 @@ def delete_file(path: str, confirmed: bool = False) -> str:
     if not confirmed:
         return f"CONFIRMATION_REQUIRED: Deleting '{path}' is a high-risk action. Please ask the user to confirm. Rerun this tool with confirmed=True once they agree."
     
+    path = os.path.expandvars(os.path.expanduser(path))
     # Resolve to absolute path to prevent bypass via relative paths
     abs_path = os.path.abspath(path).lower().replace("/", "\\")
     
@@ -1575,6 +1713,7 @@ def delete_file(path: str, confirmed: bool = False) -> str:
 def read_pdf(path: str, pages: int = 10) -> str:
     """Read and extract text from a PDF file."""
     try:
+        path = os.path.expandvars(os.path.expanduser(path))
         from PyPDF2 import PdfReader
         reader = PdfReader(path)
         total = len(reader.pages)
@@ -1596,6 +1735,7 @@ def read_pdf(path: str, pages: int = 10) -> str:
 def read_docx(path: str) -> str:
     """Read and extract text from a DOCX file."""
     try:
+        path = os.path.expandvars(os.path.expanduser(path))
         import docx
         doc = docx.Document(path)
         paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
@@ -1611,6 +1751,7 @@ def read_docx(path: str) -> str:
 
 def summarize_file(path: str) -> str:
     """Summarize a file using Gemini. Works with text, PDF, DOCX."""
+    path = os.path.expandvars(os.path.expanduser(path))
     ext = os.path.splitext(path)[1].lower()
 
     if ext == ".pdf":
@@ -1796,7 +1937,31 @@ def _get_genai_client():
     return genai.Client(api_key=key)
 
 
-def generate_image(prompt: str, aspect_ratio: str = "16:9", resolution: str = "1K", output_directory: str = None) -> str:
+def _smart_filepath(output_dir, file_name, extension):
+    """Generate filepath with auto-dedup: samosa.png → samosa (2).png → samosa (3).png.
+    
+    Returns (full_filepath, final_filename_with_ext, was_deduped).
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    # Clean file_name — remove extension if user accidentally added one
+    for ext in ['.png', '.jpg', '.jpeg', '.mp4', '.wav', '.mp3', '.webp']:
+        if file_name.lower().endswith(ext):
+            file_name = file_name[:-(len(ext))]
+            break
+    final_name = f"{file_name}{extension}"
+    base = os.path.join(output_dir, final_name)
+    if not os.path.exists(base):
+        return base, final_name, False
+    counter = 2
+    while True:
+        final_name = f"{file_name} ({counter}){extension}"
+        candidate = os.path.join(output_dir, final_name)
+        if not os.path.exists(candidate):
+            return candidate, final_name, True
+        counter += 1
+
+
+def generate_image(prompt: str, file_name: str = None, path: str = None, aspect_ratio: str = "16:9", resolution: str = "1K") -> str:
     """
     Generate an image — multi-provider fallback chain:
     0. LLM prompt enhancement (Gemini → fallback)
@@ -1810,12 +1975,18 @@ def generate_image(prompt: str, aspect_ratio: str = "16:9", resolution: str = "1
     from config import IMAGE_MODELS_FALLBACK, TOGETHER_KEYS, HF_KEYS, OPENROUTER_KEYS, OPENROUTER_IMAGE_MODELS, CF_ACCOUNTS, CF_IMAGE_MODELS
     from key_manager import APIKeyManager
     
-    if output_directory:
-        output_dir = output_directory
+    # Smart filepath with dedup
+    if path:
+        output_dir = os.path.expandvars(os.path.expanduser(path))
     else:
         output_dir = os.path.join(os.path.expanduser("~"), "Pictures", "IRA_Generated")
-    os.makedirs(output_dir, exist_ok=True)
-    filepath = os.path.join(output_dir, f"ira_image_{int(time.time())}.png")
+    if file_name:
+        filepath, final_name, was_deduped = _smart_filepath(output_dir, file_name, ".png")
+    else:
+        os.makedirs(output_dir, exist_ok=True)
+        final_name = f"ira_image_{int(time.time())}.png"
+        filepath = os.path.join(output_dir, final_name)
+        was_deduped = False
     
     # ── Stage 0: LLM Prompt Enhancement (like Edlix does) ──
     enhanced_prompt = prompt
@@ -1865,7 +2036,8 @@ def generate_image(prompt: str, aspect_ratio: str = "16:9", resolution: str = "1
                         from io import BytesIO
                         img = Image.open(BytesIO(part.inline_data.data))
                         img.save(filepath)
-                        return f"Image generated and saved to: {filepath}"
+                        dedup_note = f" (name '{file_name}.png' already existed)" if was_deduped else ""
+                        return f"Image of '{prompt[:80]}' named '{final_name}' saved at {filepath}{dedup_note}"
             except Exception as e:
                 error_str = str(e)
                 if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
@@ -1899,7 +2071,8 @@ def generate_image(prompt: str, aspect_ratio: str = "16:9", resolution: str = "1
                 img_data = base64.b64decode(b64)
                 with open(filepath, "wb") as f:
                     f.write(img_data)
-                return f"Image generated (Together FLUX) and saved to: {filepath}"
+                dedup_note = f" (name '{file_name}.png' already existed)" if was_deduped else ""
+                return f"Image of '{prompt[:80]}' named '{final_name}' saved at {filepath}{dedup_note}"
         except Exception as e:
             if "429" in str(e) or "limit" in str(e).lower():
                 continue
@@ -1930,7 +2103,8 @@ def generate_image(prompt: str, aspect_ratio: str = "16:9", resolution: str = "1
                         img_data = base64.b64decode(b64)
                         with open(filepath, "wb") as f:
                             f.write(img_data)
-                        return f"Image generated (OpenRouter {model}) and saved to: {filepath}"
+                        dedup_note = f" (name '{file_name}.png' already existed)" if was_deduped else ""
+                        return f"Image of '{prompt[:80]}' named '{final_name}' saved at {filepath}{dedup_note}"
             except Exception as e:
                 if "429" in str(e) or "rate" in str(e).lower() or "402" in str(e):
                     continue
@@ -1956,7 +2130,8 @@ def generate_image(prompt: str, aspect_ratio: str = "16:9", resolution: str = "1
                     img_data = base64.b64decode(b64)
                     with open(filepath, "wb") as f:
                         f.write(img_data)
-                    return f"Image generated (Cloudflare {model}) and saved to: {filepath}"
+                    dedup_note = f" (name '{file_name}.png' already existed)" if was_deduped else ""
+                    return f"Image of '{prompt[:80]}' named '{final_name}' saved at {filepath}{dedup_note}"
             except Exception as e:
                 if "429" in str(e) or "rate" in str(e).lower() or "limit" in str(e).lower():
                     continue
@@ -2000,7 +2175,8 @@ def generate_image(prompt: str, aspect_ratio: str = "16:9", resolution: str = "1
         if len(img_data) > 1000:
             with open(filepath, "wb") as f:
                 f.write(img_data)
-            return f"Image generated (Pollinations FLUX) and saved to: {filepath}"
+            dedup_note = f" (name '{file_name}.png' already existed)" if was_deduped else ""
+            return f"Image of '{prompt[:80]}' named '{final_name}' saved at {filepath}{dedup_note}"
     except Exception as e:
         pass
     
@@ -2119,13 +2295,26 @@ def search_images(query: str) -> str:
     return header + "\n\n".join(results)
 
 
-def generate_video(prompt: str, aspect_ratio: str = "16:9", resolution: str = "720p", duration_seconds: int = 8) -> str:
+def generate_video(prompt: str, file_name: str = None, path: str = None, aspect_ratio: str = "16:9", resolution: str = "720p", duration_seconds: int = 8) -> str:
     """Generate a video — rotate ALL keys per model, first success wins."""
     import os, time, re, json
     from config import VIDEO_MODELS_FALLBACK, OPENROUTER_KEYS, OPENROUTER_VIDEO_MODELS, TOGETHER_KEYS, TOGETHER_VIDEO_MODELS
     from key_manager import APIKeyManager
     from google import genai
     from google.genai import types
+    
+    # Smart filepath with dedup
+    if path:
+        output_dir = os.path.expandvars(os.path.expanduser(path))
+    else:
+        output_dir = os.path.join(os.path.expanduser("~"), "Videos", "IRA_Generated")
+    if file_name:
+        filepath, final_name, was_deduped = _smart_filepath(output_dir, file_name, ".mp4")
+    else:
+        os.makedirs(output_dir, exist_ok=True)
+        final_name = f"ira_video_{int(time.time())}.mp4"
+        filepath = os.path.join(output_dir, final_name)
+        was_deduped = False
     
     km = APIKeyManager(state_file=os.path.join(os.path.dirname(os.path.abspath(__file__)), "state_video.json"))
     
@@ -2164,13 +2353,11 @@ def generate_video(prompt: str, aspect_ratio: str = "16:9", resolution: str = "7
                 if not operation.response or not operation.response.generated_videos:
                     break
                 
-                output_dir = os.path.join(os.path.expanduser("~"), "Videos", "IRA_Generated")
-                os.makedirs(output_dir, exist_ok=True)
-                filepath = os.path.join(output_dir, f"ira_video_{int(time.time())}.mp4")
                 generated_video = operation.response.generated_videos[0]
                 client.files.download(file=generated_video.video)
                 generated_video.video.save(filepath)
-                return f"Video generated and saved to: {filepath}"
+                dedup_note = f" (name '{file_name}.mp4' already existed)" if was_deduped else ""
+                return f"Video of '{prompt[:80]}' named '{final_name}' saved at {filepath}{dedup_note}"
             except Exception as e:
                 error_str = str(e)
                 if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
@@ -2219,12 +2406,10 @@ def generate_video(prompt: str, aspect_ratio: str = "16:9", resolution: str = "7
                             vid_req = urllib.request.Request(video_url)
                             with urllib.request.urlopen(vid_req, timeout=60) as vid_resp:
                                 vid_data = vid_resp.read()
-                            output_dir = os.path.join(os.path.expanduser("~"), "Videos", "IRA_Generated")
-                            os.makedirs(output_dir, exist_ok=True)
-                            filepath = os.path.join(output_dir, f"ira_video_{int(time.time())}.mp4")
                             with open(filepath, "wb") as f:
                                 f.write(vid_data)
-                            return f"Video generated (OpenRouter {model}) and saved to: {filepath}"
+                            dedup_note = f" (name '{file_name}.mp4' already existed)" if was_deduped else ""
+                            return f"Video of '{prompt[:80]}' named '{final_name}' saved at {filepath}{dedup_note}"
                         break
                     elif status.get("status") == "failed":
                         break
@@ -2266,12 +2451,10 @@ def generate_video(prompt: str, aspect_ratio: str = "16:9", resolution: str = "7
                             vid_req = urllib.request.Request(video_url)
                             with urllib.request.urlopen(vid_req, timeout=60) as vid_resp:
                                 vid_data = vid_resp.read()
-                            output_dir = os.path.join(os.path.expanduser("~"), "Videos", "IRA_Generated")
-                            os.makedirs(output_dir, exist_ok=True)
-                            filepath = os.path.join(output_dir, f"ira_video_{int(time.time())}.mp4")
                             with open(filepath, "wb") as f:
                                 f.write(vid_data)
-                            return f"Video generated (Together {model}) and saved to: {filepath}"
+                            dedup_note = f" (name '{file_name}.mp4' already existed)" if was_deduped else ""
+                            return f"Video of '{prompt[:80]}' named '{final_name}' saved at {filepath}{dedup_note}"
                         break
                     elif status.get("status") == "failed":
                         break
@@ -2283,7 +2466,7 @@ def generate_video(prompt: str, aspect_ratio: str = "16:9", resolution: str = "7
     return f"Video generation failed: All models exhausted."
 
 
-def generate_music(prompt: str, duration_seconds: int = 30) -> str:
+def generate_music(prompt: str, file_name: str = None, path: str = None, duration_seconds: int = 30) -> str:
     """
     Generate music — multi-provider fallback:
     1. Gemini Lyria (per-account quota)
@@ -2293,6 +2476,19 @@ def generate_music(prompt: str, duration_seconds: int = 30) -> str:
     from key_manager import APIKeyManager
     from config import OPENROUTER_KEYS, OPENROUTER_MUSIC_MODELS
     from google import genai
+    
+    # Smart filepath with dedup
+    if path:
+        output_dir = os.path.expandvars(os.path.expanduser(path))
+    else:
+        output_dir = os.path.join(os.path.expanduser("~"), "Music", "IRA_Generated")
+    if file_name:
+        filepath, final_name, was_deduped = _smart_filepath(output_dir, file_name, ".wav")
+    else:
+        os.makedirs(output_dir, exist_ok=True)
+        final_name = f"ira_music_{int(time.time())}.wav"
+        filepath = os.path.join(output_dir, final_name)
+        was_deduped = False
     
     km = APIKeyManager(state_file=os.path.join(os.path.dirname(os.path.abspath(__file__)), "state_music.json"))
     models = ["lyria-3-clip-preview", "lyria-3-pro-preview"]
@@ -2329,12 +2525,20 @@ def generate_music(prompt: str, duration_seconds: int = 30) -> str:
                 if not interaction.output_audio:
                     break
                 
-                output_dir = os.path.join(os.path.expanduser("~"), "Music", "IRA_Generated")
-                os.makedirs(output_dir, exist_ok=True)
-                filepath = os.path.join(output_dir, f"ira_music_{int(time.time())}.wav")
-                with open(filepath, "wb") as f:
+                output_dir_lyria = path if path else os.path.join(os.path.expanduser("~"), "Music", "IRA_Generated")
+                if not file_name:
+                    os.makedirs(output_dir_lyria, exist_ok=True)
+                    filepath_lyria = os.path.join(output_dir_lyria, f"ira_music_{int(time.time())}.wav")
+                    final_name_lyria = os.path.basename(filepath_lyria)
+                    was_deduped_lyria = False
+                else:
+                    filepath_lyria = filepath
+                    final_name_lyria = final_name
+                    was_deduped_lyria = was_deduped
+                with open(filepath_lyria, "wb") as f:
                     f.write(base64.b64decode(interaction.output_audio.data))
-                return f"Music generated (Gemini {model}) and saved to: {filepath}"
+                dedup_note = f" (name '{file_name}.wav' already existed)" if was_deduped_lyria else ""
+                return f"Music of '{prompt[:80]}' named '{final_name_lyria}' saved at {filepath_lyria}{dedup_note}"
             except Exception as e:
                 error_str = str(e)
                 if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
@@ -2368,12 +2572,10 @@ def generate_music(prompt: str, duration_seconds: int = 30) -> str:
                 if audio_data:
                     b64 = audio_data.get("data", "")
                     if b64:
-                        output_dir = os.path.join(os.path.expanduser("~"), "Music", "IRA_Generated")
-                        os.makedirs(output_dir, exist_ok=True)
-                        filepath = os.path.join(output_dir, f"ira_music_{int(time.time())}.wav")
                         with open(filepath, "wb") as f:
                             f.write(base64.b64decode(b64))
-                        return f"Music generated (OpenRouter {model}) and saved to: {filepath}"
+                        dedup_note = f" (name '{file_name}.wav' already existed)" if was_deduped else ""
+                        return f"Music of '{prompt[:80]}' named '{final_name}' saved at {filepath}{dedup_note}"
             except Exception as e:
                 if "429" in str(e) or "rate" in str(e).lower():
                     continue
@@ -2461,15 +2663,42 @@ def _is_chrome_running_with_cdp() -> bool:
 
 
 def _launch_chrome_with_cdp():
-    """Launch Chrome with remote debugging port if not already running."""
+    """Launch the user's actual Chrome instance with remote debugging port enabled and restore last session."""
     import os
     import subprocess
     import time
     import psutil
-    import json
 
     if _is_chrome_running_with_cdp():
         return True
+
+    # Check if Chrome is already running but without CDP
+    chrome_running = False
+    for proc in psutil.process_iter(['name']):
+        try:
+            if proc.info['name'] and proc.info['name'].lower() == 'chrome.exe':
+                chrome_running = True
+                break
+        except Exception:
+            pass
+
+    if chrome_running:
+        print("[CDP] Chrome is running without remote debugging. Restarting Chrome to enable CDP and restore all your tabs...")
+        # Gracefully request Chrome to close first, so it saves tabs/session
+        try:
+            subprocess.run(["taskkill", "/IM", "chrome.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            print(f"[CDP] Graceful close command failed: {e}")
+        time.sleep(2.0)  # Wait for Chrome to save its session and exit gracefully
+        
+        # Kill any remaining chrome processes to release profile lock
+        for proc in psutil.process_iter(['name']):
+            try:
+                if proc.info['name'] and proc.info['name'].lower() == 'chrome.exe':
+                    proc.kill()
+            except Exception:
+                pass
+        time.sleep(1.0)  # Give OS time to release file locks on the profile directory
 
     # Find Chrome executable
     chrome_paths = [
@@ -2484,59 +2713,30 @@ def _launch_chrome_with_cdp():
             break
 
     if not chrome_exe:
+        print("[CDP] Chrome executable not found!")
         return False
 
-    # Check if Chrome is already running without remote debugging. If so, restart it
-    chrome_running = False
-    for proc in psutil.process_iter(['name']):
-        try:
-            if proc.name().lower() == 'chrome.exe':
-                chrome_running = True
-                break
-        except Exception:
-            pass
-
-    if chrome_running:
-        print("[CDP] Chrome is running without remote debugging. Restarting Chrome with remote debugging enabled...")
-        for proc in psutil.process_iter(['name']):
-            try:
-                if proc.name().lower() == 'chrome.exe':
-                    proc.kill()
-            except Exception:
-                pass
-        time.sleep(1.2) # Allow system to release file locks
-
-    chrome_user_data = os.path.join(os.environ["LOCALAPPDATA"], "Google", "Chrome", "User Data")
+    # Use the user's actual Chrome user data directory (operate on their profile!)
+    chrome_user_data = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Google", "Chrome", "User Data")
     
-    # Dynamically extract the last active/used profile directory to bypass profile selection screen
-    profile_dir = "Default"
-    try:
-        local_state_path = os.path.join(chrome_user_data, "Local State")
-        if os.path.exists(local_state_path):
-            with open(local_state_path, "r", encoding="utf-8") as f:
-                state = json.load(f)
-                profile_dir = state.get("profile", {}).get("last_used", "Default")
-    except Exception as e:
-        print(f"[CDP] Profile extraction failed: {e}")
-
-    # Launch Chrome with remote debugging on main profile.
-    # Passing a target URL like 'about:blank' at startup bypasses the profile selection prompt entirely.
+    # Launch Chrome with remote debugging on their actual profile.
+    # Bypassing the profile selection prompt and restoring last session:
     subprocess.Popen([
         chrome_exe,
         f"--remote-debugging-port={CDP_PORT}",
         f"--user-data-dir={chrome_user_data}",
-        f"--profile-directory={profile_dir}",
         "--restore-last-session",
         "--no-first-run",
         "--no-default-browser-check",
-        "about:blank"
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     # Wait up to 5 seconds for Chrome to start and CDP to be available
     for _ in range(10):
         time.sleep(0.5)
         if _is_chrome_running_with_cdp():
+            print("[CDP] Successfully connected to user's Chrome profile with CDP active!")
             return True
+    print("[CDP] Failed to start Chrome with CDP active.")
     return False
 
 
@@ -2547,6 +2747,14 @@ def get_browser_page():
     If Chrome isn't running with CDP, launches it automatically.
     """
     global _playwright_instance, _playwright_browser, _playwright_page
+
+    # Prevent Playwright Sync API from complaining in background threads under asyncio
+    import asyncio
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    except Exception:
+        pass
 
     from playwright.sync_api import sync_playwright
 
@@ -2586,21 +2794,36 @@ def get_browser_page():
     # Find the active visible tab context so we act like a human on the correct page
     try:
         active_page = None
+        about_blank_page = None
         for context in _playwright_browser.contexts:
             for page in context.pages:
                 try:
+                    if page.url == "about:blank":
+                        about_blank_page = page
                     # document.visibilityState is 'visible' for the selected active tab
+                    # Set a short timeout (200ms) to prevent hanging on suspended/frozen tabs
+                    page.set_default_timeout(200)
                     state = page.evaluate("document.visibilityState")
-                    if state == "visible":
+                    page.set_default_timeout(10000)
+                    if state == "visible" and page.url != "about:blank":
                         active_page = page
                         break
                 except Exception:
-                    pass
+                    try:
+                        page.set_default_timeout(10000)
+                    except Exception:
+                        pass
             if active_page:
                 break
         
         if active_page:
             _playwright_page = active_page
+            # Clean up the blank page if we found a real active page
+            if about_blank_page and about_blank_page != active_page:
+                try:
+                    about_blank_page.close()
+                except Exception:
+                    pass
         else:
             # Fallback to first page
             contexts = _playwright_browser.contexts
@@ -2631,7 +2854,31 @@ def browser_control(action: str, url: str | None = None, selector: str | None = 
         if action == "navigate":
             if not url:
                 return "Error: url is required."
-            page.goto(url, wait_until="domcontentloaded")
+            
+            try:
+                page.goto(url, wait_until="domcontentloaded")
+            except Exception as e:
+                return f"Navigation failed: {e}"
+                
+            # Smart waiting for known slow/heavy sites (like WhatsApp Web and YouTube)
+            lower_url = url.lower()
+            if "whatsapp.com" in lower_url:
+                print("[Browser Control] Detected WhatsApp Web. Waiting for chat list or search bar to load...")
+                try:
+                    # Wait up to 30 seconds for the WhatsApp Web chat list or search input to appear
+                    page.wait_for_selector("div[data-testid='chat-list'], div[contenteditable='true'][data-tab='3'], [aria-label='Search or start a new chat']", timeout=30000)
+                    print("[Browser Control] WhatsApp Web loaded successfully.")
+                except Exception as e:
+                    print(f"[Browser Control] Warning: WhatsApp Web load timeout/failed: {e}")
+            elif "youtube.com" in lower_url:
+                print("[Browser Control] Detected YouTube. Waiting for search box or main content...")
+                try:
+                    # Wait up to 20 seconds for YouTube's search box or main content
+                    page.wait_for_selector("input#search, ytd-browse, ytd-app", timeout=20000)
+                    print("[Browser Control] YouTube loaded successfully.")
+                except Exception as e:
+                    print(f"[Browser Control] Warning: YouTube load timeout/failed: {e}")
+            
             return f"Navigated to {url}. Title: {page.title()}"
         
         elif action == "go_back":
@@ -2753,6 +3000,10 @@ def browser_control(action: str, url: str | None = None, selector: str | None = 
     try:
         return run_in_browser_thread(_browser_control_inner)
     except Exception as e:
+        global _playwright_page, _playwright_browser, _playwright_instance
+        _playwright_page = None
+        _playwright_browser = None
+        _playwright_instance = None
         return f"Browser error: {e}"
 
 
@@ -3208,6 +3459,64 @@ def _visual_screen_find(description: str) -> tuple[int, int] | None:
 def input_control(action: str, x: int = None, y: int = None, button: str = "left", clicks: int = 1, direction: str = "down", amount: int = 3, element_number: int = None, text: str = None, key: str = None, keys: list = None, target: str = None, value: str = "", control_type: str = "", **kwargs) -> str:
     if text is None and target is not None and action == "type":
         text = target
+
+    # Check if element_number click is requested (accessibility mapping)
+    is_element_click = False
+    if action in ("click", "double_click", "right_click"):
+        if target is not None:
+            target_str = str(target).strip()
+            if target_str.isdigit():
+                element_number = int(target_str)
+                is_element_click = True
+        if element_number is not None:
+            is_element_click = True
+
+    if is_element_click:
+        # Fallback to IRA's native click mapping directly (highly optimized)
+        btn = "right" if action == "right_click" else button
+        cls = 2 if action == "double_click" else clicks
+        return click(button=btn, x=x, y=y, clicks=cls, element_number=element_number)
+
+    # Resolve target coordinates or description for Jarvis
+    resolved_target = None
+    if target is not None:
+        target_str = str(target).strip()
+        if "," in target_str:
+            parts = target_str.split(",")
+            if len(parts) == 2 and parts[0].strip().isdigit() and parts[1].strip().isdigit():
+                x = int(parts[0])
+                y = int(parts[1])
+        else:
+            resolved_target = target_str
+
+    # Attempt Jarvis primary execution
+    try:
+        j_params = {"action": action}
+        if x is not None: j_params["x"] = x
+        if y is not None: j_params["y"] = y
+        if button: j_params["button"] = button
+        if clicks: j_params["clicks"] = clicks
+        if direction: j_params["direction"] = direction
+        if amount: j_params["amount"] = amount
+        if text: j_params["text"] = text
+        if key: j_params["key"] = key
+        if keys: j_params["keys"] = "+".join(keys) if isinstance(keys, list) else keys
+        if resolved_target: j_params["description"] = resolved_target
+        if value: j_params["value"] = value
+        
+        # Mapping type action to smart_type in Jarvis for speed
+        if action == "type":
+            j_params["action"] = "smart_type"
+            
+        print(f"[Jarvis Input] Executing action '{j_params['action']}' primary...")
+        res = jarvis_computer.computer_control(j_params)
+        if "failed" not in res.lower() and "error" not in res.lower():
+            return res
+        print(f"[Jarvis Input] Warning: Jarvis action returned status: {res}. Falling back to IRA...")
+    except Exception as e:
+        print(f"[Jarvis Input] Exception: {e}. Falling back to IRA...")
+
+    # IRA fallback logic
     if action == "move":
         if target is not None:
             if "," in target:
@@ -3265,6 +3574,7 @@ def input_control(action: str, x: int = None, y: int = None, button: str = "left
         return perform_action(action_type=button if button in ("click", "double_click", "type", "hover") else "click", target=target, value=value, control_type=control_type)
     return f"Error: Unknown input action: {action}"
 
+
 def clipboard_control(action: str, text: str = None, target: str = "markdown", **kwargs) -> str:
     if action == "get":
         return get_clipboard()
@@ -3281,13 +3591,34 @@ def clipboard_control(action: str, text: str = None, target: str = "markdown", *
     return f"Error: Unknown clipboard action: {action}"
 
 def file_control(action: str, path: str, content: str = None, pattern: str = None, recursive: bool = True, lines: int = None, pages: int = 10, confirmed: bool = False, **kwargs) -> str:
+    # Direct simple reads/writes (fast and reliable)
     if action == "read":
         return read_file(path, lines=lines)
     elif action == "write":
         if content is None:
             return "Error: write action requires content parameter."
         return write_file(path, content)
-    elif action == "search":
+
+    # Attempt Jarvis universal file_processor for advanced actions (OCR, summarize, PDF, DOCX, conversion, media edit)
+    try:
+        j_params = {"file_path": path, "action": action}
+        if content is not None: j_params["content"] = content
+        if pattern is not None: j_params["pattern"] = pattern
+        if recursive is not None: j_params["recursive"] = recursive
+        if lines is not None: j_params["lines"] = lines
+        if pages is not None: j_params["pages"] = pages
+        j_params.update(kwargs)
+        
+        print(f"[Jarvis File] Executing action '{action}' on '{path}' primary...")
+        res = jarvis_file.file_processor(j_params)
+        if res and "failed" not in res.lower() and "error" not in res.lower():
+            return res
+        print(f"[Jarvis File] Warning: Jarvis action returned status: {res}. Falling back to IRA...")
+    except Exception as e:
+        print(f"[Jarvis File] Exception: {e}. Falling back to IRA...")
+
+    # Fallback to IRA original implementations
+    if action == "search":
         if pattern is None:
             return "Error: search action requires pattern parameter."
         return search_files(directory=path, pattern=pattern, recursive=recursive)
@@ -3323,8 +3654,8 @@ def browser_control_consolidated(action: str, url: str = None, selector: str = N
         if task is None:
             return "Error: agent_task requires task."
         return browser_agent_task(task, event_callback=event_callback)
-    else:
-        return browser_control(action=action, url=url, selector=selector, text=text, press_enter=press_enter, value=value)
+
+    return browser_control(action=action, url=url, selector=selector, text=text, press_enter=press_enter, value=value)
 
 def screen_control(action: str, annotate: bool = False, task: str = None, event_callback = None, **kwargs) -> str:
     if action == "screenshot":
@@ -3349,9 +3680,82 @@ def system_control(action: str, app_name: str = None, command: str = None, confi
         elif "query" in kwargs:
             command = kwargs["query"]
 
+    # 1. Open App primary routing
     if action == "open_app":
         if app_name is None:
             return "Error: open_app requires app_name."
+        try:
+            print(f"[Jarvis OpenApp] Opening '{app_name}' primary...")
+            res = jarvis_open.open_app({"app_name": app_name})
+            if res and "failed" not in res.lower() and "error" not in res.lower():
+                return res
+        except Exception as e:
+            print(f"[Jarvis OpenApp] Exception: {e}")
+
+    # 2. Reminder primary routing
+    elif action == "reminder":
+        if date is None or time_val is None or message is None:
+            return "Error: reminder requires date, time_val, and message parameters."
+        try:
+            print(f"[Jarvis Reminder] Setting reminder for {date} {time_val} primary...")
+            res = jarvis_reminder.reminder({"date": date, "time": time_val, "message": message})
+            if res and "failed" not in res.lower() and "error" not in res.lower():
+                return res
+        except Exception as e:
+            print(f"[Jarvis Reminder] Exception: {e}")
+
+    # 3. Volume and Media controls routing
+    elif action == "volume_control":
+        try:
+            j_act = {"up": "volume_up", "down": "volume_down", "mute": "mute"}.get(sub_action, "volume_up")
+            print(f"[Jarvis Volume] Adjusting volume '{j_act}' primary...")
+            res = jarvis_settings.computer_settings({"action": j_act, "value": str(steps)})
+            if res and "failed" not in res.lower() and "error" not in res.lower():
+                return res
+        except Exception as e:
+            print(f"[Jarvis Volume] Exception: {e}")
+
+    elif action == "media_control":
+        try:
+            j_act = {"play_pause": "play_pause", "stop": "pause_video", "next": "next_tab", "prev": "prev_tab"}.get(sub_action, "play_pause")
+            print(f"[Jarvis Media] Triggering media control '{j_act}' primary...")
+            res = jarvis_settings.computer_settings({"action": j_act})
+            if res and "failed" not in res.lower() and "error" not in res.lower():
+                return res
+        except Exception as e:
+            print(f"[Jarvis Media] Exception: {e}")
+
+    # 4. System info enrichment via Jarvis status monitor (CPU temp, GPU etc.)
+    elif action == "get_system_info":
+        try:
+            print(f"[Jarvis SysInfo] Querying hardware metrics primary...")
+            status = jarvis_monitor.get_system_status()
+            formatted = (
+                f"Uptime: {status.get('uptime', 'N/A')}\n"
+                f"CPU Load: {status.get('cpu_percent', 'N/A')}%\n"
+                f"RAM Usage: {status.get('ram_percent', 'N/A')}% ({status.get('ram_used_gb', 'N/A')} GB / {status.get('ram_total_gb', 'N/A')} GB)\n"
+                f"Active Processes: {status.get('process_count', 'N/A')}\n"
+            )
+            if status.get('cpu_temp_c') is not None:
+                formatted += f"CPU Temp: {status.get('cpu_temp_c')} °C\n"
+            if status.get('gpu_percent') is not None:
+                formatted += f"GPU Load: {status.get('gpu_percent')}%\n"
+            return formatted.strip()
+        except Exception as e:
+            print(f"[Jarvis SysInfo] Exception: {e}. Falling back to IRA...")
+
+    # 5. Run project routing
+    elif action == "run_project":
+        try:
+            print(f"[Jarvis RunProject] Running project in directory '{directory}' primary...")
+            res = jarvis_code.code_helper({"action": "run", "file_path": directory, "args": [command] if command else []})
+            if res and "failed" not in res.lower() and "error" not in res.lower():
+                return res
+        except Exception as e:
+            print(f"[Jarvis RunProject] Exception: {e}")
+
+    # Fallback executing logic inside IRA
+    if action == "open_app":
         return open_app(app_name)
     elif action == "run_command":
         if command is None:
@@ -3366,8 +3770,6 @@ def system_control(action: str, app_name: str = None, command: str = None, confi
     elif action == "get_time":
         return get_time()
     elif action == "reminder":
-        if date is None or time_val is None or message is None:
-            return "Error: reminder requires date, time_val, and message parameters."
         return reminder(date, time_val, message)
     elif action == "get_system_info":
         return get_system_info()
@@ -3396,13 +3798,22 @@ def system_control(action: str, app_name: str = None, command: str = None, confi
     return f"Error: Unknown system action: {action}"
 
 def web_search_consolidated(action: str, query: str, **kwargs) -> str:
+    # Route google action to Jarvis web search (grounded searches + fallback to DDG)
     if action == "google":
+        try:
+            print(f"[Jarvis WebSearch] Running query '{query}' primary...")
+            res = jarvis_web.web_search({"action": "search", "query": query})
+            if res and "failed" not in res.lower() and "error" not in res.lower():
+                return res
+        except Exception as e:
+            print(f"[Jarvis WebSearch] Exception: {e}. Falling back to IRA...")
         return web_search(query)
     elif action == "wikipedia":
         return wiki_search(query)
     elif action == "tavily":
         return search_tavily(query)
     return f"Error: Unknown search action: {action}"
+
 
 def map_control(action: str, query: str = None, place_name: str = None, lat: float = None, lng: float = None, lat2: float = None, lng2: float = None, show_route: bool = True, **kwargs) -> str:
     if action == "nearby_search":
@@ -3487,25 +3898,30 @@ def control_servo(angle: int) -> str:
         return f"Error controlling servo: {e}"
 
 
-def media_generation(action: str, prompt: str = None, query: str = None, aspect_ratio: str = "16:9", resolution: str = "1K", duration_seconds: int = 8, output_directory: str = None) -> str:
+def media_generation(action: str, prompt: str = None, file_name: str = None, path: str = None, query: str = None, aspect_ratio: str = "16:9", resolution: str = "1K", duration_seconds: int = 8, **kwargs) -> str:
+    # Mandatory param validation for generation actions
+    if action in ("generate_image", "generate_video", "generate_music"):
+        missing = []
+        if not prompt:
+            missing.append("prompt")
+        if not file_name:
+            missing.append("file_name")
+        if not path:
+            missing.append("path")
+        if missing:
+            return f"Error: {action} requires prompt, file_name, and path. You forgot to provide: {', '.join(missing)}."
+    
     if action == "generate_image":
-        if prompt is None:
-            return "Error: generate_image requires prompt."
-        return generate_image(prompt, aspect_ratio, resolution, output_directory=output_directory)
+        return generate_image(prompt, file_name=file_name, path=path, aspect_ratio=aspect_ratio, resolution=resolution)
     elif action == "search_images":
         if query is None:
             return "Error: search_images requires query."
         return search_images(query)
     elif action == "generate_video":
-        if prompt is None:
-            return "Error: generate_video requires prompt."
-        # map resolution and duration
         res = "720p" if resolution == "1K" else resolution
-        return generate_video(prompt, aspect_ratio, res, duration_seconds)
+        return generate_video(prompt, file_name=file_name, path=path, aspect_ratio=aspect_ratio, resolution=res, duration_seconds=duration_seconds)
     elif action == "generate_music":
-        if prompt is None:
-            return "Error: generate_music requires prompt."
-        return generate_music(prompt, duration_seconds)
+        return generate_music(prompt, file_name=file_name, path=path, duration_seconds=duration_seconds)
     return f"Error: Unknown media action: {action}"
 
 

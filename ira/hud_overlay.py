@@ -271,6 +271,9 @@ class HUDBridge(QObject):
         # Gemini Live
         self._live_session = None
         self._voice_resumption_handle = None
+        self._pending_startup_briefing = None
+        self._startup_briefing_sent = False
+        self._briefing_lock = threading.Lock()
         self._audio_queue: asyncio.Queue | None = None
         self._voice_responding = False  # True while IRA is generating/playing response
         self._voice_mic_paused = False  # True when mic is muted during playback
@@ -278,6 +281,10 @@ class HUDBridge(QObject):
         self._turn_complete_received = False
         self._go_away_received = False
         self._gesture_monitor_shown = False  # True when gesture monitor window is open
+
+        # Emergency tool borrowing — dynamic fallback when background agent API is exhausted
+        self._agent_dead_due_to_api = False  # True when call_agent fails due to rate limits
+        self._emergency_reconnect_pending = False  # Prevents duplicate reconnects during emergency
 
         # Internal session history — tracks both text chat and voice call messages
         # Only final user/assistant messages (no tool calls, no thoughts)
@@ -320,6 +327,10 @@ class HUDBridge(QObject):
         self._setup_active_window_listener()
 
         self._start_background_tasks()
+        
+        # Trigger startup welcome briefing (Time, Date, News summary)
+        self._run_startup_briefing()
+
 
     @Slot(str)
     def playSound(self, name: str):
@@ -670,6 +681,42 @@ class HUDBridge(QObject):
                 enable_autostart()
         except Exception as e:
             print(f"[HUD] Startup toggle error: {e}")
+
+    @Slot(result=bool)
+    def createDesktopShortcut(self) -> bool:
+        """Create a desktop shortcut pointing to the IRA launcher bat."""
+        try:
+            import os
+            import subprocess
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            if os.path.basename(current_dir) == "ira" or os.path.exists(os.path.join(os.path.dirname(current_dir), "run.bat")):
+                root_dir = os.path.dirname(current_dir)
+            else:
+                root_dir = current_dir
+                
+            launcher_path = os.path.join(root_dir, "run.bat")
+            if not os.path.exists(launcher_path):
+                launcher_path = os.path.join(root_dir, "ira.bat")
+                
+            desktop = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop')
+            shortcut_path = os.path.join(desktop, "IRA.lnk")
+            
+            # Powershell script to create shortcut
+            ps_script = f"""
+            $WshShell = New-Object -ComObject WScript.Shell
+            $Shortcut = $WshShell.CreateShortcut("{shortcut_path}")
+            $Shortcut.TargetPath = "{launcher_path}"
+            $Shortcut.WorkingDirectory = "{root_dir}"
+            $Shortcut.Description = "Launch IRA - Intelligent Responsive Assistant"
+            $Shortcut.Save()
+            """
+            
+            subprocess.run(["powershell", "-Command", ps_script], capture_output=True, check=True)
+            print(f"[HUD] Desktop shortcut created successfully at: {shortcut_path}")
+            return True
+        except Exception as e:
+            print(f"[HUD] Error creating desktop shortcut: {e}")
+            return False
 
     @Slot()
     def stopIRA(self):
@@ -1094,6 +1141,155 @@ class HUDBridge(QObject):
             parameters=HUDBridge._dict_to_schema(d.get("parameters", {}))
         )
 
+    @staticmethod
+    def _is_rate_limit_error(exc: Exception) -> bool:
+        """Check if an exception is specifically a rate-limit / quota exhaustion error.
+        Returns True only for API quota issues, NOT for network/DNS/timeout errors."""
+        err = str(exc).lower()
+        rate_limit_keywords = [
+            "429", "resource_exhausted", "quota", "rate limit", "rate_limit",
+            "api key exhausted", "all keys and models exhausted",
+            "too many requests", "requests per minute", "requests per day",
+        ]
+        return any(kw in err for kw in rate_limit_keywords)
+
+    def _list_emergency_tools(self) -> str:
+        """List all background agent tools available for emergency borrowing."""
+        from config import EXCLUDED_LIVE_TOOLS, TOOL_DECLARATIONS
+        lines = ["[EMERGENCY TOOLS — Available for borrowing]\n"]
+        for decl in TOOL_DECLARATIONS:
+            name = decl["name"]
+            if name in EXCLUDED_LIVE_TOOLS:
+                desc = decl.get("description", "No description")
+                params = decl.get("parameters", {})
+                props = params.get("properties", {})
+                required = params.get("required", [])
+                param_list = []
+                for pname, pinfo in props.items():
+                    ptype = pinfo.get("type", "STRING")
+                    pdesc = pinfo.get("description", "")
+                    req_mark = " [REQUIRED]" if pname in required else ""
+                    enum_vals = pinfo.get("enum", [])
+                    enum_str = f" (enum: {enum_vals})" if enum_vals else ""
+                    param_list.append(f"    - {pname} ({ptype}{req_mark}): {pdesc}{enum_str}")
+                params_str = "\n".join(param_list) if param_list else "    (no parameters)"
+                lines.append(f"\n• {name}: {desc}\n  Parameters:\n{params_str}")
+        return "\n".join(lines)
+
+    def _borrow_tool(self, tool_name: str, tool_args_json: str = "") -> str:
+        """Borrow and optionally execute a background agent tool directly.
+        If tool_args_json is empty, returns the tool's full schema/guide.
+        If tool_args_json is provided, executes the tool with those arguments."""
+        import json
+        from config import EXCLUDED_LIVE_TOOLS, TOOL_DECLARATIONS
+
+        # Find the tool declaration
+        target_decl = None
+        for decl in TOOL_DECLARATIONS:
+            if decl["name"] == tool_name and decl["name"] in EXCLUDED_LIVE_TOOLS:
+                target_decl = decl
+                break
+
+        if not target_decl:
+            available = [d["name"] for d in TOOL_DECLARATIONS if d["name"] in EXCLUDED_LIVE_TOOLS]
+            return f"Error: Tool '{tool_name}' not found in agent tools. Available: {available}"
+
+        # If no args provided, return the full schema as a guide
+        if not tool_args_json or tool_args_json.strip() in ("", "{}"):
+            desc = target_decl.get("description", "")
+            params = target_decl.get("parameters", {})
+            return f"[TOOL GUIDE: {tool_name}]\nDescription: {desc}\nParameters: {json.dumps(params, indent=2)}"
+
+        # Parse args and execute
+        try:
+            args = json.loads(tool_args_json)
+        except json.JSONDecodeError as e:
+            return f"Error: Invalid JSON in tool_args_json: {e}"
+
+        try:
+            from tools import execute_tool
+            result = execute_tool(tool_name, args, event_callback=self._background_agent_callback)
+            return str(result)
+        except Exception as e:
+            return f"Error executing {tool_name}: {e}"
+
+    def _init_audio_hardware(self):
+        """Initialize PyAudio and open mic/speaker streams sequentially (to prevent PortAudio concurrency crashes)."""
+        import pyaudio
+        pa_obj = pyaudio.PyAudio()
+        mic_stream = None
+        spk_stream = None
+        try:
+            # 1. Initialize Mic
+            mic_info_dict = pa_obj.get_default_input_device_info()
+            mic_idx = int(mic_info_dict["index"])
+            mic_channels = 1
+            mic_rate = 16000
+            try:
+                if not pa_obj.is_format_supported(
+                    mic_rate, input_device=mic_idx, input_channels=1, input_format=pyaudio.paInt16
+                ):
+                    mic_channels = max(1, int(mic_info_dict.get("maxInputChannels", 1)))
+            except ValueError:
+                mic_channels = max(1, int(mic_info_dict.get("maxInputChannels", 1)))
+            try:
+                if not pa_obj.is_format_supported(
+                    mic_rate, input_device=mic_idx, input_channels=mic_channels, input_format=pyaudio.paInt16
+                ):
+                    mic_rate = int(mic_info_dict.get("defaultSampleRate", 44100))
+            except ValueError:
+                mic_rate = int(mic_info_dict.get("defaultSampleRate", 44100))
+
+            mic_stream = pa_obj.open(
+                format=pyaudio.paInt16,
+                channels=mic_channels,
+                rate=mic_rate,
+                input=True,
+                input_device_index=mic_idx,
+                frames_per_buffer=1024,
+            )
+
+            # 2. Initialize Speaker
+            out_info_dict = pa_obj.get_default_output_device_info()
+            out_idx = int(out_info_dict["index"])
+            out_channels = max(1, int(out_info_dict.get("maxInputChannels", 1)))
+            spk_channels = 1
+            spk_rate = 24000
+            try:
+                if not pa_obj.is_format_supported(
+                    spk_rate, output_device=out_idx, output_channels=1, output_format=pyaudio.paInt16
+                ):
+                    spk_channels = min(2, out_channels)
+            except ValueError:
+                spk_channels = min(2, out_channels)
+            try:
+                if not pa_obj.is_format_supported(
+                    spk_rate, output_device=out_idx, output_channels=spk_channels, output_format=pyaudio.paInt16
+                ):
+                    spk_rate = int(out_info_dict.get("defaultSampleRate", 44100))
+            except ValueError:
+                spk_rate = int(out_info_dict.get("defaultSampleRate", 44100))
+
+            spk_stream = pa_obj.open(
+                format=pyaudio.paInt16,
+                channels=spk_channels,
+                rate=spk_rate,
+                output=True,
+                output_device_index=out_idx,
+                frames_per_buffer=4096,
+            )
+
+            return pa_obj, mic_stream, mic_channels, mic_rate, mic_info_dict, spk_stream, spk_channels, spk_rate, out_info_dict
+        except Exception as e:
+            if mic_stream:
+                try: mic_stream.close()
+                except Exception: pass
+            if spk_stream:
+                try: spk_stream.close()
+                except Exception: pass
+            pa_obj.terminate()
+            raise e
+
     async def _gemini_live_session(self):
         """Main Gemini Live session — mic -> Gemini -> speaker. Reconnects on actual errors only."""
         import asyncio
@@ -1116,62 +1312,120 @@ class HUDBridge(QObject):
         print("[HUD] Creating Gemini client...")
         client = genai.Client(api_key=api_key)
 
-        # Voice tools: call_agent and other native tools
-        voice_func_decls = []
-        
-        # 1. Add Call Agent declaration
-        call_agent_decl = types.FunctionDeclaration(
-            name="call_agent",
-            description=(
-                "Use this tool ONLY when the user wants to PERFORM A COMPLEX TASK: "
-                "searching the web, taking screenshots, browser control/scraping, "
-                "writing/editing code files, executing shell commands, or any multi-step "
-                "action that requires reasoning, planning, and screen observation. "
-                "Do NOT use for simple actions (like opening apps, media/volume control, todo, memory, weather, reminder) "
-                "or simple conversational chat — answer those yourself."
-            ),
-            parameters=types.Schema(
-                type=types.Type.OBJECT,
-                properties={
-                    "prompt": types.Schema(
-                        type=types.Type.STRING,
-                        description=(
-                            "The user's complex task as a clear instruction. "
-                            "Include all necessary details."
-                        )
-                    )
-                },
-                required=["prompt"]
-            )
-        )
-        voice_func_decls.append(call_agent_decl)
-        
-        # 2. Add native tools from config dynamically, excluding heavy/vision ones
-        from config import TOOL_DECLARATIONS as ALL_DECLS, EXCLUDED_LIVE_TOOLS
-        
-        for decl in ALL_DECLS:
-            name = decl["name"]
-            if name not in EXCLUDED_LIVE_TOOLS and name != "call_agent":
-                try:
-                    func_obj = HUDBridge._dict_to_func_decl(decl)
-                    voice_func_decls.append(func_obj)
-                except Exception as e:
-                    print(f"[HUD] Failed to convert tool {name}: {e}")
-                    
-        voice_tools = types.Tool(function_declarations=voice_func_decls)
-        print(f"[HUD] Voice mode: {len(voice_func_decls)} tools loaded natively")
-
+        mic_task = None
+        audio_task = None
+        pa = None
         # Build LiveConnectConfig with session context injection
         self._audio_queue = asyncio.Queue(maxsize=50)
         self._voice_input_transcript = ""
         self._voice_output_transcript = ""
-        mic_task = asyncio.create_task(self._live_mic_capture())
-        audio_task = asyncio.create_task(self._live_play_audio())
+
+        # Initialize PyAudio and streams sequentially in background thread
+        print("[HUD] Initializing audio hardware (mic & speaker) sequentially...")
+        try:
+            audio_params = await asyncio.to_thread(self._init_audio_hardware)
+            pa, mic_stream, mic_channels, mic_rate, mic_info, spk_stream, spk_channels, spk_rate, out_info = audio_params
+            print(f"[HUD] Mic initialized: device={mic_info['name']}, channels={mic_channels}, rate={mic_rate}")
+            print(f"[HUD] Speaker initialized: device={out_info['name']}, channels={spk_channels}, rate={spk_rate}")
+        except Exception as e:
+            print(f"[HUD] Audio hardware initialization failed: {e}")
+            self.voiceError.emit(f"Audio init failed: {e}")
+            return
+
+        mic_task = asyncio.create_task(self._live_mic_capture(pa, mic_stream, mic_channels, mic_rate))
+        audio_task = asyncio.create_task(self._live_play_audio(pa, spk_stream, spk_channels, spk_rate))
 
         try:
             reconnect_delay = 1
             while not self._voice_stop.is_set():
                 try:
+                    # ── Rebuild tool list on every (re)connect ──
+                    # This allows emergency tools to appear/disappear dynamically
+                    voice_func_decls = []
+
+                    # 1. Add Call Agent declaration
+                    call_agent_decl = types.FunctionDeclaration(
+                        name="call_agent",
+                        description=(
+                            "Use this tool ONLY when the user wants to PERFORM A COMPLEX TASK: "
+                            "searching the web, taking screenshots, browser control/scraping, "
+                            "writing/editing code files, executing shell commands, or any multi-step "
+                            "action that requires reasoning, planning, and screen observation. "
+                            "Do NOT use for simple actions (like opening apps, media/volume control, todo, memory, weather, reminder) "
+                            "or simple conversational chat — answer those yourself."
+                        ),
+                        parameters=types.Schema(
+                            type=types.Type.OBJECT,
+                            properties={
+                                "prompt": types.Schema(
+                                    type=types.Type.STRING,
+                                    description=(
+                                        "The user's complex task as a clear instruction. "
+                                        "Include all necessary details."
+                                    )
+                                )
+                            },
+                            required=["prompt"]
+                        )
+                    )
+                    voice_func_decls.append(call_agent_decl)
+
+                    # 2. Add native tools from config dynamically, excluding heavy/vision ones
+                    from config import TOOL_DECLARATIONS as ALL_DECLS, EXCLUDED_LIVE_TOOLS
+
+                    for decl in ALL_DECLS:
+                        name = decl["name"]
+                        if name not in EXCLUDED_LIVE_TOOLS and name != "call_agent":
+                            try:
+                                func_obj = HUDBridge._dict_to_func_decl(decl)
+                                voice_func_decls.append(func_obj)
+                            except Exception as e:
+                                print(f"[HUD] Failed to convert tool {name}: {e}")
+
+                    # 3. EMERGENCY TOOL BORROWING — inject only when agent is dead due to API
+                    if self._agent_dead_due_to_api:
+                        print("[HUD] 🚨 EMERGENCY MODE: Injecting list_emergency_tools & borrow_tool into Live session")
+                        emergency_list_decl = types.FunctionDeclaration(
+                            name="list_emergency_tools",
+                            description=(
+                                "List all background agent tools available for emergency borrowing. "
+                                "Use this to see what tools you can borrow when the agent is down."
+                            ),
+                            parameters=types.Schema(
+                                type=types.Type.OBJECT,
+                                properties={},
+                            )
+                        )
+                        emergency_borrow_decl = types.FunctionDeclaration(
+                            name="borrow_tool",
+                            description=(
+                                "Borrow and execute a background agent tool directly. "
+                                "Call with just tool_name to get the tool's guide/schema. "
+                                "Call with tool_name and tool_args_json to execute it. "
+                                "You may call this multiple times in one turn to borrow multiple tools."
+                            ),
+                            parameters=types.Schema(
+                                type=types.Type.OBJECT,
+                                properties={
+                                    "tool_name": types.Schema(
+                                        type=types.Type.STRING,
+                                        description="The name of the agent tool to borrow (e.g. 'web_search', 'file_control', 'input_control')"
+                                    ),
+                                    "tool_args_json": types.Schema(
+                                        type=types.Type.STRING,
+                                        description="JSON string of arguments to pass to the tool. Leave empty to get the tool's guide/schema first."
+                                    )
+                                },
+                                required=["tool_name"]
+                            )
+                        )
+                        voice_func_decls.append(emergency_list_decl)
+                        voice_func_decls.append(emergency_borrow_decl)
+
+                    voice_tools = types.Tool(function_declarations=voice_func_decls)
+                    emergency_label = " [🚨 EMERGENCY MODE]" if self._agent_dead_due_to_api else ""
+                    print(f"[HUD] Voice mode: {len(voice_func_decls)} tools loaded natively{emergency_label}")
+
                     # Dynamically compile session context and instruction on each connection
                     session_context = self._compile_session_context()
                     import platform
@@ -1193,6 +1447,10 @@ class HUDBridge(QObject):
                         "- Call with 'facepalm' if you make a mistake or user says something silly.\n"
                         "- Call with 'happy' for general happy/friendly reactions.\n"
                         "Call this tool concurrently alongside your spoken replies to make your reactions feel alive.\n\n"
+                        "CRITICAL RULE ON TOOL CALLING:\n"
+                        "- Do NOT call any tools for greetings, casual chat, conversational questions, or banter. Just talk directly.\n"
+                        "- Only call tools if the user is asking you to perform a specific action on the computer.\n"
+                        "- Never invent or hallucinate actions that are not in the predefined allowed enums for tools. For example, system_control only accepts actions like 'open_app', 'run_command', etc. Never call system_control(action='get_Revant') or any other non-existent action.\n\n"
                         "HOW TO HANDLE REQUESTS:\n"
                         "1. CONVERSATIONS, MATH, AND BANTER: If the user is chatting, asking questions, or requesting simple math/calculations (e.g. 'what is 2+2-2 divided by 2'), answer it DIRECTLY yourself. Do NOT call call_agent.\n\n"
                         "2. SINGLE TOOL CALL LIMITATION: You can only execute ONE tool call per turn. If you think the task requires multiple tool calls, you MUST delegate the entire task to the background agent by calling call_agent.\n\n"
@@ -1201,8 +1459,25 @@ class HUDBridge(QObject):
                         "5. ALERTS / REMINDERS: If you receive a [SYSTEM_ALERT] containing a user reminder, announce it dynamically to the user in a natural, caring, and playful Hinglish tone.\n\n"
                         "Be natural, be brief, be helpful. Hinglish mein baat karo."
                     )
+
+                    # Inject emergency mode instructions into system prompt
+                    if self._agent_dead_due_to_api:
+                        base_instruction += (
+                            "\n\n🚨 EMERGENCY BORROWING MODE ACTIVE 🚨\n"
+                            "The background agent is currently UNAVAILABLE because its API quota has been exhausted.\n"
+                            "You now have access to two emergency tools:\n"
+                            "1. list_emergency_tools() — View all agent tools available for borrowing with their full schemas.\n"
+                            "2. borrow_tool(tool_name, tool_args_json) — Borrow and execute any agent tool directly.\n\n"
+                            "EMERGENCY RULES:\n"
+                            "- You may call borrow_tool MULTIPLE TIMES in this turn. The 1-tool-per-turn limit is LIFTED.\n"
+                            "- Borrow ONLY the minimum tools required to fulfill the user's request.\n"
+                            "- These emergency tools are available for THIS TURN ONLY. After this turn, they will be revoked and normal operation will resume.\n"
+                            "- If you need to see a tool's parameters first, call borrow_tool(tool_name) without tool_args_json to get its guide.\n"
+                            "- Then call borrow_tool(tool_name, tool_args_json) with the correct arguments to execute it.\n"
+                        )
+
                     if session_context:
-                        base_instruction += f"\n\nRECENT CONVERSATION HISTORY (for context \u2014 the user may refer to these):\n{session_context}"
+                        base_instruction += f"\n\nRECENT CONVERSATION HISTORY (for context — the user may refer to these):\n{session_context}"
 
                     # Inject Context Mode
                     context_mode = getattr(self, "_context_mode", "default")
@@ -1267,22 +1542,25 @@ class HUDBridge(QObject):
                             self.voiceStateChanged.emit("idle")
                             
                         # Send startup greeting
-                        if not getattr(self, "_startup_briefing_sent", False):
-                            self._startup_briefing_sent = True
-                            print("[HUD] Sending startup greeting turn to Live WebSocket...")
+                        should_send = False
+                        with self._briefing_lock:
+                            if not self._startup_briefing_sent:
+                                briefing = self._pending_startup_briefing
+                                if briefing:
+                                    self._startup_briefing_sent = True
+                                    should_send = True
+                        
+                        if should_send:
+                            print("[HUD] Speaking pending startup briefing...")
                             self._last_input_source = "text"
                             self._set_processing(True)
                             self.statusChanged.emit("thinking", "Thinking")
-                            
-                            greeting_prompt = (
-                                "Greet the user Revant (Boss) in a friendly, enthusiastic, "
-                                "short Hinglish phrase (1 sentence) saying you are ready to assist. "
-                                "Start the conversation."
-                            )
                             await session.send_client_content(
-                                turns=[types.Content(role="user", parts=[types.Part(text=greeting_prompt)])],
+                                turns=[types.Content(role="user", parts=[types.Part(text=f"[SYSTEM_ALERT] Please announce to the user: {briefing}")])],
                                 turn_complete=True
                             )
+                        else:
+                            print("[HUD] Startup briefing not ready yet or already sent, waiting for thread to finish...")
 
                         reconnect_delay = 1
 
@@ -1306,6 +1584,10 @@ class HUDBridge(QObject):
                     if self._voice_stop.is_set():
                         break
                     print(f"[HUD] Session error: {e}")
+                    self._live_session = None
+                    if self._voice_resumption_handle:
+                        print("[HUD] Connection failed with resumption token. Clearing token to start fresh next time.")
+                        self._voice_resumption_handle = None
 
                 if not self._voice_stop.is_set():
                     self._voice_mic_paused = True
@@ -1314,20 +1596,44 @@ class HUDBridge(QObject):
                     self._drain_audio_queue()
                     self.statusChanged.emit("voice", "Reconnecting…")
                     self.voiceStateChanged.emit("connecting")
-                    # Rotate to next API key on reconnect
-                    self._voice_key_idx = (self._voice_key_idx + 1) % len(self._voice_keys)
-                    api_key = self._voice_keys[self._voice_key_idx]
-                    client = genai.Client(api_key=api_key)
-                    print(f"[HUD] Reconnecting with API key index {self._voice_key_idx} in {reconnect_delay}s...")
-                    await asyncio.sleep(reconnect_delay)
-                    reconnect_delay = min(reconnect_delay * 2, 10)
+
+                    # Emergency reconnect: skip key rotation, use 0 delay
+                    if self._emergency_reconnect_pending:
+                        self._emergency_reconnect_pending = False
+                        # Don't rotate keys — the Live session key is separate from the agent keys
+                        # Don't use resumption handle — we want a fresh session with new tool declarations
+                        self._voice_resumption_handle = None
+                        print("[HUD] 🚨 Emergency reconnect: instant reconnect with emergency tools (no key rotation, no delay)")
+                        # No delay for emergency reconnect
+                    else:
+                        if not self._voice_resumption_handle:
+                            # Rotate to next API key on reconnect only if we don't have a resumption token
+                            self._voice_key_idx = (self._voice_key_idx + 1) % len(self._voice_keys)
+                            print(f"[HUD] Rotating API key to index {self._voice_key_idx} (no active resumption token)")
+                        else:
+                            print(f"[HUD] Keeping API key index {self._voice_key_idx} to attempt session resumption")
+                        
+                        api_key = self._voice_keys[self._voice_key_idx]
+                        client = genai.Client(api_key=api_key)
+                        print(f"[HUD] Reconnecting with API key index {self._voice_key_idx} in {reconnect_delay}s...")
+                        await asyncio.sleep(reconnect_delay)
+                        reconnect_delay = min(reconnect_delay * 2, 10)
         finally:
-            mic_task.cancel()
-            audio_task.cancel()
+            if mic_task:
+                mic_task.cancel()
+            if audio_task:
+                audio_task.cancel()
             for t in (mic_task, audio_task):
+                if t:
+                    try:
+                        await t
+                    except asyncio.CancelledError:
+                        pass
+            if pa:
                 try:
-                    await t
-                except asyncio.CancelledError:
+                    pa.terminate()
+                    print("[HUD] Audio hardware terminated cleanly.")
+                except Exception:
                     pass
 
     async def _handle_live_response(self, response):
@@ -1457,6 +1763,33 @@ class HUDBridge(QObject):
                         print("[HUD] Turn complete received and GoAway is pending — closing session for clean reconnect.")
                         if self._live_session:
                             await self._live_session.close()
+
+                    # Emergency mode revocation: if emergency tools were active, revoke them
+                    # and trigger a recovery reconnect to restore normal tool set
+                    elif self._agent_dead_due_to_api:
+                        print("[HUD] 🚨 Emergency turn complete — revoking borrowed tools and reconnecting to normal mode")
+                        self._agent_dead_due_to_api = False
+                        self._emergency_reconnect_pending = False
+                        # Send a revocation notification before closing
+                        try:
+                            if self._live_session:
+                                await self._live_session.send_client_content(
+                                    turns=[types.Content(role="user", parts=[types.Part(text=(
+                                        "[SYSTEM] Emergency borrowing turn is complete. "
+                                        "The borrowed tools have been revoked and normal operations have resumed."
+                                    ))])],
+                                    turn_complete=True
+                                )
+                                # Small delay for the model to acknowledge
+                                await asyncio.sleep(2)
+                        except Exception as e:
+                            print(f"[HUD] Error sending revocation notice: {e}")
+                        # Close session to force reconnect with normal (non-emergency) tool list
+                        if self._live_session:
+                            self._voice_resumption_handle = None
+                            await self._live_session.close()
+                            print("[HUD] 🚨 Session closed for recovery reconnect (normal tools restored)")
+
                 else:
                     print("[HUD] Turn complete received, but audio is still playing. Mic unmute deferred.")
 
@@ -1481,6 +1814,19 @@ class HUDBridge(QObject):
                         # Delegate to main IRA pipeline (Gemini 3.5 Flash + all tools)
                         prompt = (fc.args or {}).get("prompt", "")
                         result = await self._call_main_agent(prompt)
+                    elif fc.name == "list_emergency_tools":
+                        # Emergency mode: list all borrowable agent tools
+                        print("[HUD] 🚨 Emergency: listing agent tools")
+                        result = self._list_emergency_tools()
+                    elif fc.name == "borrow_tool":
+                        # Emergency mode: borrow and execute an agent tool directly
+                        tool_name = (fc.args or {}).get("tool_name", "")
+                        tool_args_json = (fc.args or {}).get("tool_args_json", "")
+                        print(f"[HUD] 🚨 Emergency: borrowing tool '{tool_name}'")
+                        loop = asyncio.get_running_loop()
+                        result = await loop.run_in_executor(
+                            None, lambda: self._borrow_tool(tool_name, tool_args_json)
+                        )
                     else:
                         # Execute simple tools natively in thread pool
                         from tools import execute_tool
@@ -1538,17 +1884,38 @@ class HUDBridge(QObject):
                         turn_complete=True
                     )
 
+                    # If emergency mode was just triggered, close the session to force
+                    # a reconnect with emergency tools injected into the tool list
+                    if self._agent_dead_due_to_api and not self._emergency_reconnect_pending:
+                        self._emergency_reconnect_pending = True
+                        print("[HUD] 🚨 Emergency reconnect: closing session to inject emergency tools...")
+                        # Small delay to let the model finish speaking the alert
+                        await asyncio.sleep(3)
+                        if self._live_session:
+                            await self._live_session.close()
+                            print("[HUD] 🚨 Session closed for emergency reconnect")
+
 
     async def _call_main_agent(self, prompt: str) -> str:
         """Delegate to main IRA agent (Gemini 3.5 Flash + all tools + screenshots)."""
         try:
+            self._set_processing(True)
+            self.statusChanged.emit("thinking", "Thinking")
             from gemini import GeminiAgent
+            import stop
+            stop.reset_stop() # Reset global stop flag
             
             if not hasattr(self, '_main_agent') or self._main_agent is None:
                 print("[HUD] Creating main IRA agent for call_agent tool...")
                 self._main_agent = GeminiAgent(event_callback=self._background_agent_callback)
             else:
                 self._main_agent.event_callback = self._background_agent_callback
+            
+            # Reset stop flags on agents
+            self._main_agent.stop_requested = False
+            if self._agent:
+                self._agent.stop_requested = False
+                
             agent = self._main_agent
 
             # Inject session context so the agent knows what was discussed
@@ -1585,7 +1952,29 @@ class HUDBridge(QObject):
             return result
         except Exception as e:
             print(f"[HUD] call_agent error: {e}")
+            # Check if this is a rate-limit / quota exhaustion error
+            if HUDBridge._is_rate_limit_error(e):
+                print("[HUD] 🚨 RATE LIMIT DETECTED — Triggering emergency borrowing mode")
+                self._agent_dead_due_to_api = True
+                # Return a special system alert that tells the model about emergency tools
+                # The session will be reconnected (with emergency tools injected) after this turn completes
+                return (
+                    "[SYSTEM ALERT]\n"
+                    "The background agent is unavailable because its API quota has been exhausted.\n"
+                    "Emergency borrowing mode is now being enabled.\n"
+                    "The session will reconnect momentarily with emergency tools available.\n"
+                    "You will then be able to:\n"
+                    "1. list_emergency_tools() — View available agent tools\n"
+                    "2. borrow_tool(tool_name, tool_args_json) — Execute agent tools directly\n"
+                    "You may borrow multiple tools during the NEXT TURN ONLY.\n"
+                    "Borrow only the minimum tools required.\n"
+                    "Normal operation will resume after that turn.\n"
+                    "Tell the user that the agent is temporarily down but you can still help using borrowed tools."
+                )
             return f"Agent error: {e}"
+        finally:
+            self._set_processing(False)
+            self.statusChanged.emit("idle", "Ready")
 
 
     @staticmethod
@@ -1622,46 +2011,8 @@ class HUDBridge(QObject):
             pass
         return 0.0
 
-    async def _live_mic_capture(self):
+    async def _live_mic_capture(self, pa, stream, mic_channels, mic_rate):
         """Capture mic audio and send to Gemini Live."""
-        import pyaudio
-
-        pa = pyaudio.PyAudio()
-        mic_info = pa.get_default_input_device_info()
-        dev_idx = int(mic_info["index"])
-        dev_channels = max(1, int(mic_info.get("maxInputChannels", 1)))
-
-        # Try mono first (Gemini expects mono), fall back to device's native channels
-        mic_channels = 1
-        mic_rate = 16000
-        try:
-            if not pa.is_format_supported(
-                mic_rate, input_device=dev_idx, input_channels=1, input_format=pyaudio.paInt16
-            ):
-                mic_channels = dev_channels
-        except ValueError:
-            mic_channels = dev_channels
-
-        # Also check if 16kHz is supported; fall back to device default
-        try:
-            if not pa.is_format_supported(
-                mic_rate, input_device=dev_idx, input_channels=mic_channels, input_format=pyaudio.paInt16
-            ):
-                mic_rate = int(mic_info.get("defaultSampleRate", 44100))
-        except ValueError:
-            mic_rate = int(mic_info.get("defaultSampleRate", 44100))
-
-        print(f"[HUD] Mic: device={mic_info['name']}, channels={mic_channels}, rate={mic_rate}")
-
-        stream = pa.open(
-            format=pyaudio.paInt16,
-            channels=mic_channels,
-            rate=mic_rate,
-            input=True,
-            input_device_index=dev_idx,
-            frames_per_buffer=1024,
-        )
-
         print("[HUD] Mic capture started")
         try:
             while not self._voice_stop.is_set():
@@ -1713,50 +2064,15 @@ class HUDBridge(QObject):
                 print(f"[HUD] Mic capture error: {e}")
         finally:
             self.audioLevelChanged.emit(0.0)
-            stream.stop_stream()
-            stream.close()
-            pa.terminate()
+            if stream:
+                try:
+                    stream.stop_stream()
+                    stream.close()
+                except Exception:
+                    pass
 
-    async def _live_play_audio(self):
+    async def _live_play_audio(self, pa, stream, spk_channels, spk_rate):
         """Play audio responses from Gemini Live. Manages mic pause/resume for echo prevention."""
-        import pyaudio
-
-        pa = pyaudio.PyAudio()
-        out_info = pa.get_default_output_device_info()
-        out_idx = int(out_info["index"])
-        out_channels = max(1, int(out_info.get("maxOutputChannels", 1)))
-
-        # Try mono first, fall back to stereo
-        spk_channels = 1
-        spk_rate = 24000
-        try:
-            if not pa.is_format_supported(
-                spk_rate, output_device=out_idx, output_channels=1, output_format=pyaudio.paInt16
-            ):
-                spk_channels = min(2, out_channels)
-        except ValueError:
-            spk_channels = min(2, out_channels)
-
-        # Check if 24kHz is supported; fall back to device default
-        try:
-            if not pa.is_format_supported(
-                spk_rate, output_device=out_idx, output_channels=spk_channels, output_format=pyaudio.paInt16
-            ):
-                spk_rate = int(out_info.get("defaultSampleRate", 44100))
-        except ValueError:
-            spk_rate = int(out_info.get("defaultSampleRate", 44100))
-
-        print(f"[HUD] Speaker: device={out_info['name']}, channels={spk_channels}, rate={spk_rate}")
-
-        stream = pa.open(
-            format=pyaudio.paInt16,
-            channels=spk_channels,
-            rate=spk_rate,
-            output=True,
-            output_device_index=out_idx,
-            frames_per_buffer=4096,
-        )
-
         print("[HUD] Audio playback started")
         try:
             was_speaking = False
@@ -1817,9 +2133,12 @@ class HUDBridge(QObject):
                 print(f"[HUD] Audio playback error: {e}")
         finally:
             self.audioLevelChanged.emit(0.0)
-            stream.stop_stream()
-            stream.close()
-            pa.terminate()
+            if stream:
+                try:
+                    stream.stop_stream()
+                    stream.close()
+                except Exception:
+                    pass
 
     def _drain_audio_queue(self):
         """Drain all pending audio from the queue (used on interruption)."""
@@ -2001,6 +2320,48 @@ class HUDBridge(QObject):
         self.systemStatsUpdated.emit(json.dumps(stats))
         self._check_heartbeat()
 
+    def _run_startup_briefing(self):
+        """Fetch startup welcome briefing and show it in the chat window + speak a short intro."""
+        def _task():
+            time.sleep(2.0)
+            if self._stop_flag.is_set():
+                return
+            try:
+                if not self._agent:
+                    from gemini import GeminiAgent
+                    self._agent = GeminiAgent(event_callback=self._event_callback)
+                print("[HUD Startup] Fetching welcome briefing...")
+                self.statusChanged.emit("thinking", "Preparing briefing")
+                briefing = self._agent.get_welcome_briefing()
+                
+                self.add_message("assistant", briefing)
+                self._internal_session_history.append(
+                    {"role": "assistant", "source": "text", "text": briefing}
+                )
+                self._activity_logs.append({
+                    "timestamp": datetime.datetime.now().isoformat(),
+                    "message": f"🤖 IRA: {briefing}"
+                })
+                self.requestAutoSave.emit()
+                
+                html = _md_to_html(briefing)
+                self._streamReadySignal.emit(html)
+                
+                self._pending_startup_briefing = briefing
+                
+                # Speak the welcome briefing via Live WebSocket if active, protecting with lock to prevent duplicates
+                with self._briefing_lock:
+                    if not self._startup_briefing_sent:
+                        if self._live_session and getattr(self, "_voice_loop", None):
+                            self._speak_proactive(briefing)
+                            self._startup_briefing_sent = True
+                        else:
+                            self.statusChanged.emit("idle", "Ready")
+            except Exception as e:
+                print(f"[HUD Startup] Welcome briefing error: {e}")
+                self.statusChanged.emit("idle", "Ready")
+        threading.Thread(target=_task, daemon=True).start()
+
     def _speak_proactive(self, text: str):
         """Speak proactive message using Gemini Live if active, falling back to SAPI."""
         if self._live_session and getattr(self, "_voice_loop", None):
@@ -2113,6 +2474,54 @@ class HUDBridge(QObject):
         """Force QML to re-emit all hotspot positions."""
         self._hotspot_rects.clear()
         # QML should re-register all hotspots in response
+
+    @Slot(result=str)
+    def startPhoneBridge(self) -> str:
+        """Start the FastAPI phone bridge server, generate QR code, and return details."""
+        try:
+            import whatsapp_bridge
+            import qrcode
+            import json
+            from pathlib import Path
+            
+            # Start uvicorn server in a background thread if it isn't running
+            server = whatsapp_bridge.start_server_in_thread()
+            
+            # Generate a new PIN code
+            pin = server.new_key()
+            
+            # Construct the connection URL (use secure=True for HTTPS)
+            url = f"{server.get_url(secure=True)}/auto-login?key={pin}"
+            
+            # Generate QR code image
+            qr = qrcode.QRCode(box_size=5, border=2)
+            qr.add_data(url)
+            qr.make(fit=True)
+            img = qr.make_image(fill_color="black", back_color="white")
+            
+            # Save QR code inside web/ or scratch/ directory so QML can read it
+            scratch_dir = Path(__file__).resolve().parent / "scratch"
+            scratch_dir.mkdir(parents=True, exist_ok=True)
+            qr_path = scratch_dir / "phone_qr.png"
+            img.save(str(qr_path))
+            
+            # Return QML load details (use absolute file:/// path)
+            qr_url = qr_path.as_uri()
+            
+            return json.dumps({
+                "ok": True,
+                "url": server.get_url(secure=True),
+                "pin": pin,
+                "qr_path": qr_url
+            })
+        except Exception as e:
+            print(f"[Phone Bridge] Error starting: {e}")
+            return json.dumps({"ok": False, "error": str(e)})
+
+    @Slot()
+    def stopPhoneBridge(self):
+        """Stop the FastAPI phone bridge server (currently clean uvicorn exit not needed as daemon)."""
+        pass
 
     @Slot(result=str)
     def getSettings(self) -> str:
@@ -2906,6 +3315,18 @@ class HUDBridge(QObject):
                 })
                 print(f"[HUD] Logged Text Assistant to session history: '{response[:100]}...'")
                 self.requestAutoSave.emit()
+                
+                # Clear resumption handle to force a fresh connection with the updated context
+                self._voice_resumption_handle = None
+                
+                # If there's an active live session, trigger a reconnect
+                if self._live_session and getattr(self, "_voice_loop", None):
+                    print("[HUD] Active Live session detected after background turn. Closing session to force sync reconnect...")
+                    try:
+                        import asyncio
+                        asyncio.run_coroutine_threadsafe(self._live_session.close(), self._voice_loop)
+                    except Exception as e:
+                        print(f"[HUD] Error closing live session for history sync: {e}")
                 html = _md_to_html(response)
                 # Emit via signal so the QTimer starts on the main thread (not worker thread)
                 self._streamReadySignal.emit(html)

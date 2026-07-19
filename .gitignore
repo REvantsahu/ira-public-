@@ -5,6 +5,7 @@
 ira_api_keys.txt
 
 # Python
+.venv/
 __pycache__/
 *.pyc
 *.pyo

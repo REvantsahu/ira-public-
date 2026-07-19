@@ -265,9 +265,17 @@ class GeminiAgent:
         self.extra_tool_declarations = extra
         self.tools = _build_tools(extra)
         
-        # Inject dynamic Operating System information to the system prompt
+        # Inject dynamic Operating System and User Profile information to the system prompt
         import platform
-        self._system_prompt = SYSTEM_PROMPT + f"\n\nCURRENT OPERATING SYSTEM CONTEXT:\n- Operating System: {platform.system()} ({platform.release()})"
+        import getpass
+        from pathlib import Path
+        self._system_prompt = (
+            SYSTEM_PROMPT + 
+            f"\n\nCURRENT OPERATING SYSTEM CONTEXT:\n"
+            f"- Operating System: {platform.system()} ({platform.release()})\n"
+            f"- Current Logged-in Username: {getpass.getuser()}\n"
+            f"- User Home Directory Path: {Path.home().as_posix()}"
+        )
         
         skills_ctx = _load_skills_context()
         if skills_ctx:
@@ -625,8 +633,15 @@ class GeminiAgent:
                 except Exception as e:
                     print(f"  [WARN] Failed to append camera capture bytes: {e}")
 
+            # Only mark screen_changed for tools that ACTUALLY modify the screen.
+            # screen_control with action='screenshot' or 'analyse' is observation-only —
+            # marking it as screen_changed triggers an annotated verification screenshot
+            # whose red numbered UI element labels confuse the model (e.g. returning "655").
             if name in SCREEN_CHANGE_TOOLS:
-                screen_changed = True
+                if name == "screen_control" and args.get("action") in ("screenshot", "analyse"):
+                    pass  # Observation only — no screen change
+                else:
+                    screen_changed = True
 
         # Vision verification — take screenshot after screen-changing actions
         auto_screenshot = False
@@ -688,3 +703,68 @@ class GeminiAgent:
             return f"API Error after tool call: {e}"
 
         return self._process_response(response, contents, config, depth + 1)
+
+    def get_welcome_briefing(self) -> str:
+        """Generate a personalized welcome briefing (time, day, system monitoring stats)."""
+        import datetime
+        import psutil
+        
+        # 1. Get current date and time
+        now = datetime.datetime.now()
+        time_str = now.strftime("%I:%M %p on %A, %B %d, %Y")
+        
+        # 2. Get system stats
+        try:
+            cpu = psutil.cpu_percent(interval=None)
+            ram = psutil.virtual_memory()
+            ram_percent = ram.percent
+            ram_used = f"{ram.used // (1024**3)}GB"
+            ram_total = f"{ram.total // (1024**3)}GB"
+            
+            try:
+                bat = psutil.sensors_battery()
+                battery_percent = bat.percent if bat else None
+                charging = bat.power_plugged if bat else False
+            except Exception:
+                battery_percent = None
+                charging = False
+                
+            sys_info = f"CPU Usage: {cpu}%, RAM Usage: {ram_percent}% ({ram_used}/{ram_total})"
+            if battery_percent is not None:
+                sys_info += f", Battery: {battery_percent}%" + (" (Charging)" if charging else "")
+        except Exception as e:
+            print(f"  [Startup] Warning: could not fetch system stats: {e}")
+            sys_info = "System status: Normal"
+            
+        # 3. Formulate the prompt for welcome briefing
+        prompt = (
+            f"You are IRA, a friendly desktop AI assistant. Today is {time_str}.\n"
+            f"Here are the current system monitoring stats:\n"
+            f"{sys_info}\n\n"
+            f"Please generate a short, friendly, and conversational welcome message in Hinglish.\n"
+            f"- Greet Reban (the user) casually.\n"
+            f"- State the current time, date, and weekday.\n"
+            f"- Mention that the system is running smoothly, and briefly report the system stats (CPU, RAM, and Battery if available).\n"
+            f"- Keep it extremely concise (around 50-80 words), casual, and friendly. Do not use markdown headings (# or ##) or bold markdown (* or **) in formatting."
+        )
+        
+        self._emit("status", {"state": "thinking", "label": "Preparing briefing"})
+        
+        # Generate content using the best model
+        config = types.GenerateContentConfig(
+            temperature=0.7,
+            system_instruction="You are IRA (Intelligent Responsive Assistant). Speak in Hinglish (mix of Hindi and English). Keep responses friendly, natural, and concise.",
+        )
+        
+        try:
+            contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
+            response = self._try_generate(contents, config)
+            if response.candidates and response.candidates[0].content.parts:
+                briefing_text = "".join(part.text for part in response.candidates[0].content.parts if part.text)
+                return briefing_text.strip()
+        except Exception as e:
+            print(f"  [Startup] Greeting generation failed: {e}")
+            
+        # Fallback welcome message if LLM fails
+        return f"Hey Reban! It's {time_str}. Hope you are having a great day! System stats: {sys_info}."
+

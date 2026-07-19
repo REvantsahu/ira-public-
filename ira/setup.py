@@ -82,9 +82,13 @@ RESET = "\033[0m"
 def get_installed_version(pip_name):
     """Get version of an installed package."""
     try:
-        return pkg_resources.get_distribution(pip_name).version
-    except pkg_resources.DistributionNotFound:
-        return None
+        import importlib.metadata
+        return importlib.metadata.version(pip_name)
+    except Exception:
+        try:
+            return pkg_resources.get_distribution(pip_name).version
+        except Exception:
+            return None
 
 def version_tuple(v):
     """Convert version string to comparable tuple."""
@@ -113,15 +117,18 @@ def check_deps():
 
 def install_package(pip_name, version):
     """Install or upgrade a package."""
-    cmd = [sys.executable, "-m", "pip", "install", "--upgrade", f"{pip_name}>={version}"]
+    python_exe = "python" if getattr(sys, "frozen", False) else sys.executable
+    cmd = [python_exe, "-m", "pip", "install", "--upgrade", f"{pip_name}>={version}"]
     result = subprocess.run(cmd, capture_output=True, text=True)
     return result.returncode == 0
 
 def main():
-    print(f"\n{BOLD}{CYAN}╔══════════════════════════════════════════════╗{RESET}")
-    print(f"{BOLD}{CYAN}║        IRA — Dependency Setup Script         ║{RESET}")
-    print(f"{BOLD}{CYAN}║  Intelligent Responsive Assistant            ║{RESET}")
-    print(f"{BOLD}{CYAN}╚══════════════════════════════════════════════╝{RESET}\n")
+    auto_install = "--yes" in sys.argv or "-y" in sys.argv
+
+    print(f"\n{BOLD}{CYAN}+----------------------------------------------+{RESET}")
+    print(f"{BOLD}{CYAN}|        IRA - Dependency Setup Script         |{RESET}")
+    print(f"{BOLD}{CYAN}|  Intelligent Responsive Assistant            |{RESET}")
+    print(f"{BOLD}{CYAN}+----------------------------------------------+{RESET}\n")
 
     print(f"{BOLD}Python:{RESET} {sys.version.split()[0]}")
     print(f"{BOLD}Platform:{RESET} {sys.platform}\n")
@@ -132,38 +139,39 @@ def main():
 
     # Print OK
     if installed_ok:
-        print(f"{GREEN}✔ Installed & up-to-date ({len(installed_ok)}):{RESET}")
+        print(f"{GREEN}[OK] Installed & up-to-date ({len(installed_ok)}):{RESET}")
         for pip_name, _, required_ver, installed_ver in installed_ok:
-            print(f"  {GREEN}●{RESET} {pip_name} {installed_ver}")
+            print(f"  {GREEN}*{RESET} {pip_name} {installed_ver}")
         print()
 
     # Print need update
     if needs_update:
-        print(f"{YELLOW}⚠ Needs update ({len(needs_update)}):{RESET}")
+        print(f"{YELLOW}[!] Needs update ({len(needs_update)}):{RESET}")
         for pip_name, _, required_ver, installed_ver in needs_update:
-            print(f"  {YELLOW}●{RESET} {pip_name} {installed_ver} → {required_ver}")
+            print(f"  {YELLOW}*{RESET} {pip_name} {installed_ver} -> {required_ver}")
         print()
 
     # Print missing
     if missing:
-        print(f"{RED}✘ Missing ({len(missing)}):{RESET}")
+        print(f"{RED}[X] Missing ({len(missing)}):{RESET}")
         for pip_name, _, required_ver, _ in missing:
-            print(f"  {RED}●{RESET} {pip_name} {required_ver}")
+            print(f"  {RED}*{RESET} {pip_name} {required_ver}")
         print()
 
     total_issues = len(needs_update) + len(missing)
 
     if total_issues == 0:
-        print(f"\n{GREEN}{BOLD}🎉 All set! IRA is ready to run on this PC.{RESET}\n")
+        print(f"\n{GREEN}{BOLD}[Success] All set! IRA is ready to run on this PC.{RESET}\n")
         return
 
     # Ask to install
     print(f"{BOLD}Total packages to install/update: {total_issues}{RESET}")
-    choice = input(f"\n{CYAN}Install now? (y/n): {RESET}").strip().lower()
+    if not auto_install:
+        choice = input(f"\n{CYAN}Install now? (y/n): {RESET}").strip().lower()
 
-    if choice != "y":
-        print(f"\n{YELLOW}Skipped. Run this script again when ready.{RESET}\n")
-        return
+        if choice != "y":
+            print(f"\n{YELLOW}Skipped. Run this script again when ready.{RESET}\n")
+            return
 
     # Install
     print(f"\n{BOLD}Installing packages...{RESET}\n")
@@ -183,13 +191,13 @@ def main():
             fail += 1
 
     # Summary
-    print(f"\n{'─' * 44}")
-    print(f"{GREEN}✔ Installed: {success}{RESET}")
+    print(f"\n{'-' * 44}")
+    print(f"{GREEN}[OK] Installed: {success}{RESET}")
     if fail:
-        print(f"{RED}✘ Failed: {fail}{RESET}")
+        print(f"{RED}[X] Failed: {fail}{RESET}")
 
     if fail == 0:
-        print(f"\n{GREEN}{BOLD}🎉 All done! IRA is ready to go.{RESET}\n")
+        print(f"\n{GREEN}{BOLD}[Success] All done! IRA is ready to go.{RESET}\n")
     else:
         print(f"\n{YELLOW}Some packages failed. Try manually:{RESET}")
         print(f"  pip install <package_name>\n")

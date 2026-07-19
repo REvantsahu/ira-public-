@@ -83,30 +83,41 @@ def load_all_skills() -> list[dict]:
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
         metadata = {}
-        for line in content.split("\n")[:10]:
+        content_lines = content.split("\n")
+        body_start = 0
+        for i, line in enumerate(content_lines[:10]):
             if ":" in line and not line.startswith("#"):
                 key, _, val = line.partition(":")
                 metadata[key.strip()] = val.strip()
-        skills.append({"name": name, "path": path, "content": content, "metadata": metadata})
+                body_start = i + 1
+            elif line.startswith("# ") or not line.strip():
+                body_start = i + 1
+            else:
+                break
+        body_content = "\n".join(content_lines[body_start:])
+        skills.append({"name": name, "path": path, "content": body_content, "metadata": metadata})
     return skills
 
 
 def get_skills_context() -> str:
-    """Get all skills formatted as context for system prompt injection."""
+    """Get all skills formatted as a lightweight registry for system prompt injection."""
     skills = load_all_skills()
     if not skills:
         return ""
-    parts = ["\n## Loaded Skills:"]
+    parts = [
+        "\n## SYSTEM SKILLS REGISTRY (LOAD ON DEMAND):",
+        "You have access to the following custom workflow skills. When a task matches a skill's 'When to use' criteria, you MUST load the full skill instructions by calling: skill_control(action='read', name='<skill_name>') before executing the task.",
+        "Available Skills:"
+    ]
     for s in skills:
         meta = s["metadata"]
         desc = meta.get("description", "")
         when = meta.get("when_to_use", "")
-        parts.append(f"\n### {s['name']}")
+        parts.append(f"- **{s['name']}**:")
         if desc:
-            parts.append(f"Description: {desc}")
+            parts.append(f"  Description: {desc}")
         if when:
-            parts.append(f"When to use: {when}")
-        parts.append(s["content"])
+            parts.append(f"  When to use: {when}")
     return "\n".join(parts)
 
 
