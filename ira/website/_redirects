@@ -1,0 +1,7 @@
+# Netlify Redirects for IRA Landing Page
+/sitemap  /sitemap.xml  301
+/repo     https://github.com/REvantsahu/ira-public-  302
+/portfolio https://revants.netlify.app  302
+/labs     https://nagchetra.netlify.app  302
+
+/*        /index.html   200

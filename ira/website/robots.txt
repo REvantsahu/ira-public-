@@ -1,0 +1,35 @@
+# Robots.txt for IRA Desktop AI Agent (https://ira-agent.netlify.app)
+# Optimized for Traditional SEO, GEO (Generative Engine Optimization) & AEO (Answer Engine Optimization)
+
+User-agent: *
+Allow: /
+Disallow: /private/
+Disallow: /tmp/
+
+# AI Search & RAG Bots (GEO & AEO Enabled)
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+# Sitemap Location
+Sitemap: https://ira-agent.netlify.app/sitemap.xml

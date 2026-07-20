@@ -3,9 +3,149 @@
 <html class="dark" lang="en"><head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>IRA v0.5 Beta | Neural Desktop Assistant</title>
-<meta name="description" content="IRA is a high-tech desktop AI assistant that sees your screen, controls your PC, and remembers everything. Developed by Revant @ Nagchetra Labs.">
+<title>IRA v0.5 Beta — Neural Desktop AI Agent | Powered by Gemini</title>
+<meta name="description" content="IRA (Intelligent Responsive Assistant) is an autonomous desktop AI agent that sees your PC screen, executes mouse/keyboard controls, automates web DOM, and speaks real-time Hinglish.">
+<meta name="keywords" content="IRA, IRA AI, Desktop AI Agent, Gemini 3.5 Flash, Gemini Live API, Computer Use AI, Revant Sahu, Nagchetra Labs, Screen Vision AI, Autonomous Assistant">
+<meta name="author" content="Revant Sahu (rebantsahu)">
+<meta name="theme-color" content="#0b0b0e">
+<link rel="canonical" href="https://ira-agent.netlify.app/">
+
+<!-- Favicons -->
+<link rel="icon" href="favicon.png" type="image/png">
 <link rel="icon" href="logo.png" type="image/png">
+<link rel="apple-touch-icon" href="favicon.png">
+
+<!-- Open Graph / Facebook / LinkedIn Social Preview -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ira-agent.netlify.app/">
+<meta property="og:title" content="IRA v0.5 Beta — Neural Desktop AI Agent">
+<meta property="og:description" content="IRA is a high-tech desktop AI assistant that sees your screen, controls your PC, and remembers everything. Powered by Gemini 3.5 Flash & Live Audio.">
+<meta property="og:image" content="https://ira-agent.netlify.app/og-image.png">
+<meta property="og:site_name" content="IRA AI Assistant">
+
+<!-- Twitter Cards -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:url" content="https://ira-agent.netlify.app/">
+<meta name="twitter:title" content="IRA v0.5 Beta — Neural Desktop AI Agent">
+<meta name="twitter:description" content="The AI that sees your screen & controls your PC. Built by Revant Sahu @ Nagchetra Labs.">
+<meta name="twitter:image" content="https://ira-agent.netlify.app/og-image.png">
+
+<!-- GEO (Generative Engine Optimization), AEO & Google Rich Snippets JSON-LD Structured Data (@graph) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://ira-agent.netlify.app/#software",
+      "name": "IRA — Intelligent Responsive Assistant",
+      "alternateName": "IRA v0.5 Beta",
+      "operatingSystem": "Windows 10, Windows 11",
+      "applicationCategory": "UtilitiesApplication",
+      "downloadUrl": "https://github.com/REvantsahu/ira-public-",
+      "softwareVersion": "0.5 Beta",
+      "description": "IRA is an autonomous desktop AI assistant that sees your screen with computational vision, executes PyAutoGUI mouse/keyboard controls, automates browser DOM and WhatsApp Web, and communicates via real-time Gemini Live audio.",
+      "license": "https://opensource.org/licenses/MIT",
+      "author": {
+        "@type": "Person",
+        "@id": "https://revants.netlify.app/#person",
+        "name": "Revant Sahu",
+        "jobTitle": "Lead AI Engineer",
+        "sameAs": [
+          "https://revants.netlify.app",
+          "https://github.com/REvantsahu"
+        ]
+      },
+      "publisher": {
+        "@type": "Organization",
+        "@id": "https://nagchetra.netlify.app/#organization",
+        "name": "Nagchetra Labs",
+        "url": "https://nagchetra.netlify.app",
+        "logo": "https://ira-agent.netlify.app/logo.png"
+      }
+    },
+    {
+      "@type": "Organization",
+      "@id": "https://nagchetra.netlify.app/#organization",
+      "name": "Nagchetra Labs",
+      "url": "https://nagchetra.netlify.app",
+      "logo": "https://ira-agent.netlify.app/logo.png",
+      "sameAs": [
+        "https://nagchetra.netlify.app"
+      ]
+    },
+    {
+      "@type": "Person",
+      "@id": "https://revants.netlify.app/#person",
+      "name": "Revant Sahu",
+      "jobTitle": "Lead AI Engineer",
+      "worksFor": {
+        "@type": "Organization",
+        "@id": "https://nagchetra.netlify.app/#organization"
+      },
+      "sameAs": [
+        "https://revants.netlify.app",
+        "https://github.com/REvantsahu"
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://ira-agent.netlify.app/#faq",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is IRA v0.5 Beta?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "IRA (Intelligent Responsive Assistant) is an autonomous desktop AI agent built using Python, Google Gemini APIs, and PySide6 QML overlay. She can see your PC screen, control mouse & keyboard, automate web browsers, and talk to you in real-time."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How does IRA see the computer screen?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "IRA uses high-speed MSS screen capture combined with Pillow image processing to capture silent verification screenshots. She analyzes UI elements, text, and button coordinates using Gemini 3.5 Flash vision."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What is the voice engine used by IRA?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "IRA uses the Gemini Live WebSocket API (gemini-3.1-flash-live-preview) for sub-200ms real-time audio conversations with native Hinglish fluency and audio barge-in interruption support."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How does IRA handle WhatsApp messaging and browser automation?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "IRA integrates Playwright and PyAutoGUI DOM automation. She can open WhatsApp Web, search for contacts, format text messages, and send them automatically without human intervention."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does IRA remember conversations and user preferences?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes, IRA features a persistent JSON-based memory graph that saves user preferences, past project context, and custom knowledge across computer restarts."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is IRA open source and where can I find the code?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes, IRA is open-source under the MIT license created by Revant Sahu @ Nagchetra Labs. The official public repository is hosted on GitHub at https://github.com/REvantsahu/ira-public-."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800;900&amp;family=Space+Grotesk:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
@@ -210,7 +350,7 @@
 <a class="font-mono text-xs text-primary-container font-bold border-b border-primary-container uppercase tracking-wider transition-all duration-300 hover:scale-105" href="#hero">Neural Link</a>
 <a class="font-mono text-xs text-on-surface-variant font-medium uppercase tracking-wider hover:text-primary transition-all duration-300 hover:scale-105" href="#bento">Core Logic</a>
 <a class="font-mono text-xs text-on-surface-variant font-medium uppercase tracking-wider hover:text-primary transition-all duration-300 hover:scale-105" href="#gallery">Interface Evidence</a>
-<a class="font-mono text-xs text-on-surface-variant font-medium uppercase tracking-wider hover:text-primary transition-all duration-300 hover:scale-105" href="#terminal">Execution Log</a>
+<a class="font-mono text-xs text-on-surface-variant font-medium uppercase tracking-wider hover:text-primary transition-all duration-300 hover:scale-105" href="#faq">FAQ & GEO</a>
 <a class="font-mono text-xs text-on-surface-variant font-medium uppercase tracking-wider hover:text-primary transition-all duration-300 hover:scale-105" href="#creators">Creators</a>
 </div>
 
@@ -444,6 +584,79 @@
         <img id="lightboxModalImg" src="" alt="Full Screen Screenshot">
     </div>
 </div>
+
+<!-- FAQ & GEO ACCORDION SECTION -->
+<section class="mb-32 max-w-4xl mx-auto" id="faq">
+<div class="text-center mb-12">
+    <span class="font-mono text-xs text-primary-container uppercase tracking-widest">// GEO & AEO KNOWLEDGE GRAPH</span>
+    <h2 class="font-display text-4xl font-extrabold text-white mt-2">FREQUENTLY ASKED QUESTIONS</h2>
+    <p class="font-body text-on-surface-variant max-w-lg mx-auto mt-2">Direct verifiable answers structured for search engines, LLM RAG, and AI Overviews.</p>
+</div>
+
+<div class="space-y-4">
+
+    <div class="glass-card rounded-2xl p-6 border border-white/10">
+        <h3 class="font-display text-xl font-bold text-white mb-2 flex items-center justify-between">
+            <span>What is IRA v0.5 Beta?</span>
+            <span class="text-primary-container font-mono text-sm">01</span>
+        </h3>
+        <p class="font-body text-sm text-on-surface-variant leading-relaxed">
+            IRA (Intelligent Responsive Assistant) is an autonomous desktop AI agent built using Python 3.10+, Google Gemini APIs, PySide6 QML overlay, and Playwright DOM automation. She runs locally on Windows, reads your screen, controls your mouse & keyboard, and communicates via real-time audio.
+        </p>
+    </div>
+
+    <div class="glass-card rounded-2xl p-6 border border-white/10">
+        <h3 class="font-display text-xl font-bold text-white mb-2 flex items-center justify-between">
+            <span>How does IRA see and read the computer screen?</span>
+            <span class="text-primary-container font-mono text-sm">02</span>
+        </h3>
+        <p class="font-body text-sm text-on-surface-variant leading-relaxed">
+            IRA captures verification screenshots using MSS and Pillow. She extracts UI elements, button coordinates, and text using Gemini 3.5 Flash vision and computer use vision models to execute pixel-precise actions.
+        </p>
+    </div>
+
+    <div class="glass-card rounded-2xl p-6 border border-white/10">
+        <h3 class="font-display text-xl font-bold text-white mb-2 flex items-center justify-between">
+            <span>What voice engine powers IRA's speech?</span>
+            <span class="text-primary-container font-mono text-sm">03</span>
+        </h3>
+        <p class="font-body text-sm text-on-surface-variant leading-relaxed">
+            IRA connects directly to the Gemini Live WebSocket API (`gemini-3.1-flash-live-preview`) for sub-200ms latency voice responses. She speaks Hinglish naturally with full audio barge-in interruption capabilities.
+        </p>
+    </div>
+
+    <div class="glass-card rounded-2xl p-6 border border-white/10">
+        <h3 class="font-display text-xl font-bold text-white mb-2 flex items-center justify-between">
+            <span>How does IRA automate WhatsApp Web and web browsers?</span>
+            <span class="text-primary-container font-mono text-sm">04</span>
+        </h3>
+        <p class="font-body text-sm text-on-surface-variant leading-relaxed">
+            IRA integrates a dedicated WhatsApp Node.js bridge and DOM browser agent. She opens WhatsApp Web, selects contacts, formats text messages, and sends them automatically without manual clicking.
+        </p>
+    </div>
+
+    <div class="glass-card rounded-2xl p-6 border border-white/10">
+        <h3 class="font-display text-xl font-bold text-white mb-2 flex items-center justify-between">
+            <span>Does IRA remember context and past conversations?</span>
+            <span class="text-primary-container font-mono text-sm">05</span>
+        </h3>
+        <p class="font-body text-sm text-on-surface-variant leading-relaxed">
+            Yes, IRA features a persistent JSON memory graph (`memory.py`). She stores user preferences, project details, past tasks, and custom knowledge queryable across application restarts.
+        </p>
+    </div>
+
+    <div class="glass-card rounded-2xl p-6 border border-white/10">
+        <h3 class="font-display text-xl font-bold text-white mb-2 flex items-center justify-between">
+            <span>Is IRA open source and how can I install it?</span>
+            <span class="text-primary-container font-mono text-sm">06</span>
+        </h3>
+        <p class="font-body text-sm text-on-surface-variant leading-relaxed">
+            IRA is 100% open-source under the MIT license created by Revant Sahu @ Nagchetra Labs. You can clone the code and run one-click setup via GitHub at <a href="https://github.com/REvantsahu/ira-public-" target="_blank" class="text-primary-container underline">https://github.com/REvantsahu/ira-public-</a>.
+        </p>
+    </div>
+
+</div>
+</section>
 
 <!-- Technical Specs Section -->
 <section class="mt-20 grid grid-cols-1 md:grid-cols-3 gap-gutter" id="creators">
