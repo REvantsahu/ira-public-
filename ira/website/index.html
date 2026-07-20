@@ -1,646 +1,114 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IRA v0.5 Beta — Next-Gen Desktop AI Agent</title>
-    <meta name="description" content="IRA is a high-tech desktop AI assistant that sees your screen, controls your PC, and remembers everything. Developed by Revant @ Nagchetra Labs.">
-    <link rel="icon" href="logo.png" type="image/png">
-    
-    <!-- Unique High-Character Fonts: Syne (Hero Display), Space Grotesk (Body & UI), JetBrains Mono (Code & Technical) -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@700;800;900&display=swap" rel="stylesheet">
 
-    <style>
-        :root {
-            --bg-obsidian: #030306;
-            --bg-glass: rgba(12, 12, 20, 0.65);
-            --bg-glass-hover: rgba(20, 20, 34, 0.85);
-            --border-glow: rgba(0, 240, 255, 0.25);
-            --border-dim: rgba(255, 255, 255, 0.07);
-            
-            --cyan: #00f0ff;
-            --purple: #8b5cf6;
-            --pink: #ec4899;
-            --green: #10b981;
-            --amber: #f59e0b;
-            
-            --font-display: 'Syne', sans-serif;
-            --font-body: 'Space Grotesk', sans-serif;
-            --font-mono: 'JetBrains Mono', monospace;
-        }
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>IRA v0.5 Beta | Neural Desktop Assistant</title>
+<meta name="description" content="IRA is a high-tech desktop AI assistant that sees your screen, controls your PC, and remembers everything. Developed by Revant @ Nagchetra Labs.">
+<link rel="icon" href="logo.png" type="image/png">
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800;900&amp;family=Space+Grotesk:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            scroll-behavior: smooth;
-        }
-
+<style>
         body {
-            background-color: var(--bg-obsidian);
-            color: #f3f4f6;
-            font-family: var(--font-body);
+            background-color: #0b0b0e;
+            color: #e5e2e1;
             overflow-x: hidden;
-            line-height: 1.6;
-            cursor: default;
+            font-family: 'Space Grotesk', sans-serif;
         }
 
-        /* ── CUSTOM GLOWING CURSOR ── */
-        #cursor-dot {
-            width: 8px;
-            height: 8px;
-            background: var(--cyan);
-            border-radius: 50%;
-            position: fixed;
-            pointer-events: none;
-            z-index: 999999;
-            transform: translate(-50%, -50%);
-            box-shadow: 0 0 12px var(--cyan);
-            transition: width 0.2s, height 0.2s, background-color 0.2s;
+        .glass-card {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        #cursor-ring {
-            width: 36px;
-            height: 36px;
-            border: 1.5px solid rgba(0, 240, 255, 0.5);
-            border-radius: 50%;
-            position: fixed;
-            pointer-events: none;
-            z-index: 999998;
-            transform: translate(-50%, -50%);
-            transition: transform 0.15s ease-out, border-color 0.2s;
-        }
-
-        /* ── CYBER PRELOADER ── */
-        #preloader {
-            position: fixed;
-            inset: 0;
-            background: #020204;
-            z-index: 9999999;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            transition: opacity 0.8s ease, visibility 0.8s ease;
-        }
-
-        #preloader.fade-out {
-            opacity: 0;
-            visibility: hidden;
-        }
-
-        .loader-ring-outer {
-            width: 110px;
-            height: 110px;
-            border-radius: 50%;
-            border: 2px dashed rgba(0, 240, 255, 0.2);
-            border-top: 2px solid var(--cyan);
-            border-bottom: 2px solid var(--purple);
-            animation: spin 1.2s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
-            margin-bottom: 2rem;
-            position: relative;
-        }
-
-        @keyframes spin { 100% { transform: rotate(360deg); } }
-
-        .loader-val {
-            font-family: var(--font-display);
-            font-size: 3rem;
-            font-weight: 900;
-            letter-spacing: -0.04em;
-            background: linear-gradient(135deg, var(--cyan), var(--purple));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .loader-sub {
-            font-family: var(--font-mono);
-            font-size: 0.85rem;
-            color: var(--cyan);
-            margin-top: 8px;
-            letter-spacing: 0.1em;
-        }
-
-        /* ── AMBIENT BACKGROUND GLOWS & GRID ── */
-        .cyber-grid {
-            position: fixed;
-            inset: 0;
-            background-image: 
-                linear-gradient(rgba(0, 240, 255, 0.02) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(0, 240, 255, 0.02) 1px, transparent 1px);
-            background-size: 80px 80px;
-            z-index: -2;
-            pointer-events: none;
-        }
-
-        .ambient-glow {
-            position: fixed;
-            width: 650px;
-            height: 650px;
-            border-radius: 50%;
-            filter: blur(180px);
-            opacity: 0.12;
-            z-index: -1;
-            pointer-events: none;
-            animation: floatGlow 25s ease-in-out infinite alternate;
-        }
-
-        .glow-1 { top: -200px; left: -100px; background: var(--cyan); }
-        .glow-2 { bottom: -200px; right: -100px; background: var(--purple); }
-
-        @keyframes floatGlow {
-            0% { transform: translate(0, 0) scale(1); }
-            100% { transform: translate(80px, -60px) scale(1.15); }
-        }
-
-        /* ── NAVIGATION ── */
-        nav {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            z-index: 10000;
-            padding: 1.2rem 4rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: rgba(3, 3, 6, 0.7);
-            backdrop-filter: blur(25px);
-            border-bottom: 1px solid var(--border-dim);
-            transition: all 0.4s ease;
-        }
-
-        nav.scrolled {
-            padding: 0.8rem 4rem;
-            background: rgba(3, 3, 6, 0.95);
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
-        }
-
-        .brand-logo {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            text-decoration: none;
-        }
-
-        .brand-icon {
-            width: 42px;
-            height: 42px;
-            border-radius: 12px;
-            background: linear-gradient(135deg, var(--cyan), var(--purple));
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-family: var(--font-display);
-            font-weight: 900;
-            font-size: 1.3rem;
-            color: #000;
-            box-shadow: 0 0 20px rgba(0, 240, 255, 0.4);
-        }
-
-        .brand-name {
-            font-family: var(--font-display);
-            font-size: 1.5rem;
-            font-weight: 800;
-            color: #fff;
-            letter-spacing: -0.02em;
-        }
-
-        .v-badge {
-            font-family: var(--font-mono);
-            font-size: 0.72rem;
-            font-weight: 600;
-            color: var(--cyan);
-            background: rgba(0, 240, 255, 0.1);
-            border: 1px solid rgba(0, 240, 255, 0.3);
-            padding: 3px 10px;
-            border-radius: 20px;
-            margin-left: 8px;
-        }
-
-        .nav-items {
-            display: flex;
-            gap: 2.5rem;
-            list-style: none;
-        }
-
-        .nav-items a {
-            color: #a0a0b8;
-            text-decoration: none;
-            font-weight: 500;
-            font-size: 0.95rem;
-            transition: color 0.3s ease;
-        }
-
-        .nav-items a:hover { color: var(--cyan); }
-
-        /* ── BUTTONS ── */
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 10px;
-            padding: 14px 32px;
-            border-radius: 14px;
-            font-weight: 600;
-            font-size: 0.95rem;
-            text-decoration: none;
-            cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-            border: none;
-        }
-
-        .btn-op-primary {
-            background: linear-gradient(135deg, var(--cyan), var(--purple));
-            color: #000;
-            font-weight: 700;
-            box-shadow: 0 0 30px rgba(0, 240, 255, 0.35);
-        }
-
-        .btn-op-primary:hover {
-            transform: translateY(-3px) scale(1.02);
-            box-shadow: 0 0 45px rgba(0, 240, 255, 0.6);
-        }
-
-        .btn-op-glass {
-            background: var(--bg-glass);
-            color: #fff;
-            border: 1px solid var(--border-glow);
-            backdrop-filter: blur(15px);
-        }
-
-        .btn-op-glass:hover {
-            border-color: var(--cyan);
-            background: var(--bg-glass-hover);
+        .glass-card:hover {
+            border-color: rgba(0, 240, 255, 0.4);
+            background: rgba(255, 255, 255, 0.05);
             transform: translateY(-3px);
-            color: var(--cyan);
+            box-shadow: 0 15px 35px rgba(0, 240, 255, 0.15);
         }
 
-        .btn-github {
-            background: #11111a;
-            color: #fff;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-        }
-
-        .btn-github:hover {
-            border-color: #fff;
-            transform: translateY(-2px);
-        }
-
-        /* ── HERO SECTION (ASYMMETRICAL DRAMATIC TYPE) ── */
-        .hero-section {
-            min-height: 100vh;
-            padding: 11rem 4rem 6rem;
-            max-width: 1400px;
-            margin: 0 auto;
-            display: grid;
-            grid-template-columns: 1.2fr 1fr;
-            gap: 4rem;
-            align-items: center;
-        }
-
-        .hero-text-col {
-            text-align: left;
-        }
-
-        .hero-eyebrow {
-            font-family: var(--font-mono);
-            font-size: 0.85rem;
-            color: var(--cyan);
-            text-transform: uppercase;
-            letter-spacing: 0.18em;
-            margin-bottom: 1.5rem;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .hero-eyebrow::before {
-            content: '';
-            width: 24px;
-            height: 2px;
-            background: var(--cyan);
-        }
-
-        /* OP HERO TITLE WITH SYNE DISPLAY FONT */
-        .hero-title {
-            font-family: var(--font-display);
-            font-size: clamp(3.2rem, 6.5vw, 5.8rem);
-            font-weight: 900;
-            line-height: 1.02;
-            letter-spacing: -0.04em;
-            margin-bottom: 2rem;
-            text-transform: uppercase;
-        }
-
-        .hero-title .text-cyan {
-            background: linear-gradient(135deg, var(--cyan), #38bdf8);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .hero-title .text-purple {
-            background: linear-gradient(135deg, var(--purple), var(--pink));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .hero-desc {
-            font-size: 1.25rem;
-            color: #a0a0b8;
-            max-width: 620px;
-            margin-bottom: 3rem;
-            font-weight: 400;
-            line-height: 1.7;
-        }
-
-        .hero-actions {
-            display: flex;
-            gap: 1.2rem;
-            flex-wrap: wrap;
-        }
-
-        /* HERO ARTWORK FRAME & VOICE SPECTRUM WIDGET */
-        .hero-art-col {
+        .gradient-border {
             position: relative;
-            display: flex;
-            justify-content: center;
+            border-radius: inherit;
         }
 
-        .hero-art-card {
-            width: 100%;
-            max-width: 540px;
-            height: 480px;
-            border-radius: 24px;
-            background: var(--bg-glass);
-            border: 1px solid var(--border-glow);
-            box-shadow: 0 0 60px rgba(0, 240, 255, 0.15);
-            backdrop-filter: blur(20px);
-            overflow: hidden;
-            position: relative;
-            transform: perspective(1000px) rotateY(-6deg) rotateX(4deg);
-            transition: transform 0.5s cubic-bezier(0.1, 1, 0.1, 1);
-        }
-
-        .hero-art-card:hover {
-            transform: perspective(1000px) rotateY(0deg) rotateX(0deg);
-        }
-
-        .hero-art-card img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-
-        /* FLOATING VOICE AUDIO SPECTRUM WIDGET ON HERO */
-        .voice-spectrum-widget {
+        .gradient-border::before {
+            content: "";
             position: absolute;
-            bottom: 24px;
-            left: 24px;
-            right: 24px;
-            background: rgba(10, 10, 18, 0.85);
-            border: 1px solid var(--border-glow);
-            border-radius: 16px;
-            padding: 16px 20px;
-            backdrop-filter: blur(20px);
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+            inset: 0;
+            border-radius: inherit;
+            padding: 1px;
+            background: linear-gradient(45deg, #00f0ff, #b600f8);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            opacity: 0.6;
+            transition: opacity 0.3s ease;
         }
 
-        .spectrum-bars {
-            display: flex;
-            align-items: flex-end;
-            gap: 4px;
-            height: 28px;
+        .gradient-border:hover::before {
+            opacity: 1;
         }
 
-        .spectrum-bar {
-            width: 4px;
-            background: var(--cyan);
-            border-radius: 4px;
-            animation: wave 1.2s ease-in-out infinite alternate;
+        .nebula-glow {
+            position: fixed;
+            width: 600px;
+            height: 600px;
+            border-radius: 50%;
+            filter: blur(140px);
+            z-index: -1;
+            opacity: 0.15;
+            pointer-events: none;
         }
 
-        .spectrum-bar:nth-child(2) { animation-delay: -0.3s; height: 100%; background: var(--purple); }
-        .spectrum-bar:nth-child(3) { animation-delay: -0.6s; height: 70%; background: var(--pink); }
-        .spectrum-bar:nth-child(4) { animation-delay: -0.9s; height: 40%; }
-        .spectrum-bar:nth-child(5) { animation-delay: -0.2s; height: 85%; background: var(--cyan); }
-
-        @keyframes wave {
-            0% { height: 20%; }
-            100% { height: 100%; }
-        }
-
-        .spectrum-info {
-            font-family: var(--font-mono);
-            font-size: 0.8rem;
-        }
-
-        .spectrum-info .status { color: var(--green); font-weight: 700; }
-        .spectrum-info .sub { color: #8888a0; font-size: 0.75rem; }
-
-        /* ── UNIQ BENTO GRID SECTION (CYBER-LUXE OBSIDIAN BENTO) ── */
-        .bento-section {
-            padding: 8rem 4rem;
-            max-width: 1400px;
-            margin: 0 auto;
-        }
-
-        .section-tag-mono {
-            font-family: var(--font-mono);
-            font-size: 0.85rem;
-            color: var(--cyan);
-            letter-spacing: 0.15em;
-            text-transform: uppercase;
-            margin-bottom: 1rem;
-            display: block;
-        }
-
-        .section-head-title {
-            font-family: var(--font-display);
-            font-size: clamp(2.2rem, 5vw, 3.8rem);
-            font-weight: 900;
-            line-height: 1.1;
-            margin-bottom: 3.5rem;
-            text-transform: uppercase;
-        }
-
-        /* 12-COLUMN ASYMMETRICAL BENTO MESH */
-        .bento-grid {
-            display: grid;
-            grid-template-columns: repeat(12, 1fr);
-            gap: 1.5rem;
-        }
-
-        .bento-cell {
-            background: var(--bg-glass);
-            border: 1px solid var(--border-dim);
-            border-radius: 24px;
-            padding: 2.5rem;
-            backdrop-filter: blur(20px);
-            position: relative;
-            overflow: hidden;
-            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-        }
-
-        .bento-cell::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
+        .cursor-blink {
+            display: inline-block;
+            width: 8px;
             height: 2px;
-            background: linear-gradient(90deg, transparent, var(--cyan), transparent);
-            opacity: 0;
-            transition: opacity 0.4s ease;
+            background-color: #00f0ff;
+            animation: blink 1s infinite;
+            vertical-align: middle;
+            margin-left: 4px;
         }
 
-        .bento-cell:hover {
-            border-color: var(--border-glow);
-            transform: translateY(-6px);
-            background: var(--bg-glass-hover);
-            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
         }
 
-        .bento-cell:hover::before { opacity: 1; }
-
-        /* Asymmetrical Spans */
-        .cell-span-8 { grid-column: span 8; }
-        .cell-span-4 { grid-column: span 4; }
-        .cell-span-6 { grid-column: span 6; }
-        .cell-span-12 { grid-column: span 12; }
-
-        .bento-icon-badge {
-            width: 52px;
-            height: 52px;
-            border-radius: 14px;
-            background: rgba(0, 240, 255, 0.08);
-            border: 1px solid rgba(0, 240, 255, 0.2);
-            color: var(--cyan);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 1.5rem;
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
         }
 
-        .bento-cell h3 {
-            font-family: var(--font-display);
-            font-size: 1.6rem;
-            font-weight: 800;
-            margin-bottom: 0.8rem;
-            text-transform: uppercase;
+        .animate-float {
+            animation: float 6s ease-in-out infinite;
         }
 
-        .bento-cell p {
-            color: #a0a0b8;
-            font-size: 1.02rem;
-            line-height: 1.65;
+        .holographic-overlay {
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 240, 255, 0.03) 0px,
+                rgba(0, 240, 255, 0.03) 1px,
+                transparent 1px,
+                transparent 2px
+            );
+            pointer-events: none;
         }
 
-        .bento-art-preview {
-            margin-top: 1.5rem;
-            width: 100%;
-            height: 200px;
-            border-radius: 16px;
-            overflow: hidden;
-            border: 1px solid var(--border-dim);
-        }
-
-        .bento-art-preview img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-
-        /* ── INTERACTIVE SCREENSHOT LIGHTBOX GALLERY ── */
-        .gallery-section {
-            padding: 6rem 4rem 8rem;
-            max-width: 1400px;
-            margin: 0 auto;
-        }
-
-        .gallery-filter-bar {
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-            margin-bottom: 3rem;
-        }
-
-        .filter-btn {
-            font-family: var(--font-mono);
-            font-size: 0.85rem;
-            padding: 10px 24px;
-            border-radius: 30px;
-            background: var(--bg-glass);
-            border: 1px solid var(--border-dim);
-            color: #a0a0b8;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .filter-btn.active, .filter-btn:hover {
-            border-color: var(--cyan);
-            color: var(--cyan);
-            background: rgba(0, 240, 255, 0.12);
-            box-shadow: 0 0 20px rgba(0, 240, 255, 0.2);
-        }
-
-        .gallery-mesh {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-            gap: 2rem;
-        }
-
-        .gallery-item-card {
-            background: var(--bg-glass);
-            border: 1px solid var(--border-dim);
-            border-radius: 20px;
-            overflow: hidden;
-            cursor: pointer;
-            transition: all 0.4s ease;
-        }
-
-        .gallery-item-card:hover {
-            transform: translateY(-8px) scale(1.02);
-            border-color: var(--cyan);
-            box-shadow: 0 20px 45px rgba(0, 240, 255, 0.25);
-        }
-
-        .gallery-item-card img {
-            width: 100%;
-            height: 260px;
-            object-fit: cover;
-            display: block;
-        }
-
-        .gallery-item-body {
-            padding: 1.5rem;
-            background: rgba(8, 8, 14, 0.95);
-            border-top: 1px solid var(--border-dim);
-        }
-
-        .gallery-item-body h4 {
-            font-family: var(--font-display);
-            font-size: 1.25rem;
-            font-weight: 800;
-            color: #fff;
-            margin-bottom: 6px;
-        }
-
-        .gallery-item-body p {
-            font-size: 0.88rem;
-            color: #a0a0b8;
-        }
-
-        /* ── LIGHTBOX MODAL ── */
+        /* Lightbox modal */
         #lightboxModal {
             position: fixed;
             inset: 0;
-            background: rgba(2, 2, 5, 0.94);
-            backdrop-filter: blur(30px);
+            background: rgba(3, 3, 7, 0.94);
+            backdrop-filter: blur(25px);
             z-index: 999999;
             display: flex;
             align-items: center;
@@ -661,8 +129,8 @@
             max-width: 92vw;
             max-height: 90vh;
             border-radius: 20px;
-            border: 1px solid var(--border-glow);
-            box-shadow: 0 0 80px rgba(0, 240, 255, 0.3);
+            border: 1px solid rgba(0, 240, 255, 0.4);
+            box-shadow: 0 0 60px rgba(0, 240, 255, 0.3);
             overflow: hidden;
         }
 
@@ -683,603 +151,363 @@
             transition: color 0.2s;
         }
 
-        .lightbox-close-btn:hover { color: var(--cyan); }
-
-        /* ── INTERACTIVE TERMINAL EXECUTOR ── */
-        .terminal-wrap {
-            padding: 6rem 4rem;
-            max-width: 1000px;
-            margin: 0 auto;
-        }
-
-        .terminal-window {
-            background: #05050a;
-            border: 1px solid var(--border-glow);
-            border-radius: 24px;
-            overflow: hidden;
-            box-shadow: 0 30px 70px rgba(0, 0, 0, 0.8);
-        }
-
-        .term-topbar {
-            background: #0c0c16;
-            padding: 16px 24px;
-            display: flex;
-            align-items: center;
-            border-bottom: 1px solid var(--border-dim);
-        }
-
-        .term-dots { display: flex; gap: 8px; }
-        .t-dot { width: 12px; height: 12px; border-radius: 50%; }
-        .t-red { background: #ef4444; }
-        .t-yellow { background: #f59e0b; }
-        .t-green { background: #10b981; }
-
-        .term-label {
-            margin: 0 auto;
-            font-family: var(--font-mono);
-            font-size: 0.85rem;
-            color: #8888a0;
-        }
-
-        .term-screen {
-            padding: 2.2rem;
-            font-family: var(--font-mono);
-            font-size: 0.95rem;
-            min-height: 340px;
-            max-height: 440px;
-            overflow-y: auto;
-            line-height: 1.85;
-        }
-
-        .t-user { color: var(--green); font-weight: 700; }
-        .t-ira { color: var(--cyan); font-weight: 700; }
-        .t-tool { color: var(--amber); }
-        .t-dim { color: #6b7280; }
-
-        .term-actions-bar {
-            padding: 1.2rem 2.2rem;
-            background: #080810;
-            border-top: 1px solid var(--border-dim);
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-
-        .t-preset-btn {
-            font-family: var(--font-mono);
-            font-size: 0.82rem;
-            padding: 8px 16px;
-            border-radius: 10px;
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid var(--border-dim);
-            color: #a0a0b8;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        .t-preset-btn:hover {
-            border-color: var(--cyan);
-            color: var(--cyan);
-            background: rgba(0, 240, 255, 0.1);
-        }
-
-        /* ── CREATOR FOOTPRINT & PORTFOLIO LINKS ── */
-        .footprint-section {
-            padding: 8rem 4rem;
-            max-width: 1400px;
-            margin: 0 auto;
-        }
-
-        .footprint-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 2rem;
-        }
-
-        .footprint-card {
-            background: var(--bg-glass);
-            border: 1px solid var(--border-dim);
-            border-radius: 24px;
-            padding: 3rem 2.5rem;
-            text-align: center;
-            backdrop-filter: blur(20px);
-            transition: all 0.4s ease;
-        }
-
-        .footprint-card:hover {
-            transform: translateY(-8px);
-            border-color: var(--cyan);
-        }
-
-        .footprint-avatar {
-            width: 84px;
-            height: 84px;
-            border-radius: 50%;
-            margin: 0 auto 1.5rem;
-            border: 2px solid var(--cyan);
-            box-shadow: 0 0 25px rgba(0, 240, 255, 0.35);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 2.2rem;
-            background: rgba(0, 240, 255, 0.08);
-        }
-
-        .footprint-card h3 {
-            font-family: var(--font-display);
-            font-size: 1.6rem;
-            font-weight: 800;
-            margin-bottom: 0.6rem;
-            text-transform: uppercase;
-        }
-
-        .footprint-card p {
-            color: #a0a0b8;
-            font-size: 0.98rem;
-            margin-bottom: 2rem;
-            line-height: 1.6;
-        }
-
-        /* ── FOOTER ── */
-        footer {
-            background: #020205;
-            border-top: 1px solid var(--border-dim);
-            padding: 4rem;
-            color: #8888a0;
-        }
-
-        .footer-flex {
-            max-width: 1400px;
-            margin: 0 auto;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 2rem;
-            margin-bottom: 3rem;
-        }
-
-        .footer-links-list {
-            display: flex;
-            gap: 2.5rem;
-            list-style: none;
-        }
-
-        .footer-links-list a {
-            color: #a0a0b8;
-            text-decoration: none;
-            transition: color 0.3s;
-        }
-
-        .footer-links-list a:hover { color: var(--cyan); }
-
-        .footer-copy {
-            text-align: center;
-            font-size: 0.88rem;
-            border-top: 1px solid rgba(255, 255, 255, 0.04);
-            padding-top: 2rem;
-        }
-
-        /* Responsive */
-        @media (max-width: 1024px) {
-            .hero-section { grid-template-columns: 1fr; text-align: center; padding-top: 9rem; }
-            .hero-text-col { text-align: center; }
-            .hero-eyebrow { justify-content: center; }
-            .hero-actions { justify-content: center; }
-            .bento-grid { grid-template-columns: 1fr; }
-            .cell-span-8, .cell-span-4, .cell-span-6 { grid-column: span 12; }
-            .footprint-grid { grid-template-columns: 1fr; }
-            nav { padding: 1rem 2rem; }
-            .nav-items { display: none; }
-        }
+        .lightbox-close-btn:hover { color: #00f0ff; }
     </style>
-</head>
-<body>
 
-    <!-- CUSTOM CURSOR -->
-    <div id="cursor-dot"></div>
-    <div id="cursor-ring"></div>
-
-    <!-- PRELOADER -->
-    <div id="preloader">
-        <div class="loader-ring-outer"></div>
-        <div class="loader-val" id="loaderVal">0%</div>
-        <div class="loader-sub" id="loaderSub">> MOUNTING CYBER-LUXE OBSIDIAN...</div>
-    </div>
-
-    <!-- AMBIENT GLOWS & GRID -->
-    <div class="cyber-grid"></div>
-    <div class="ambient-glow glow-1"></div>
-    <div class="ambient-glow glow-2"></div>
-
-    <!-- NAVIGATION -->
-    <nav id="navbar">
-        <a href="#" class="brand-logo">
-            <div class="brand-icon">I</div>
-            <span class="brand-name">IRA <span class="v-badge">v0.5 Beta</span></span>
-        </a>
-
-        <ul class="nav-items">
-            <li><a href="#hero">Overview</a></li>
-            <li><a href="#bento">Architecture</a></li>
-            <li><a href="#gallery">Interface Gallery</a></li>
-            <li><a href="#terminal">Live Execution</a></li>
-            <li><a href="#creators">Creators</a></li>
-        </ul>
-
-        <div style="display:flex; align-items:center; gap:16px;">
-            <a href="https://github.com/REvantsahu/ira-public-" target="_blank" class="btn btn-github">
-                <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-                GitHub Repo
-            </a>
-        </div>
-    </nav>
-
-    <!-- HERO SECTION -->
-    <section class="hero-section" id="hero">
-        <div class="hero-text-col">
-            <div class="hero-eyebrow">Stitch MCP Design System Certified</div>
-            
-            <h1 class="hero-title">
-                The AI That <span class="text-cyan">Sees</span> & <span class="text-purple">Controls</span> Your PC
-            </h1>
-
-            <p class="hero-desc">
-                IRA is an autonomous desktop AI agent running locally on your computer. 
-                Powered by Gemini 3.5 Flash & Gemini Live API, she reads your screen in real-time, executes complex keyboard & mouse actions, automates browser DOM, and remembers your workflow.
-            </p>
-
-            <div class="hero-actions">
-                <a href="https://github.com/REvantsahu/ira-public-" target="_blank" class="btn btn-op-primary">
-                    <span>Explore GitHub Repository</span>
-                    <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                </a>
-                <a href="https://revants.netlify.app" target="_blank" class="btn btn-op-glass">
-                    <span>Revant's Portfolio ↗</span>
-                </a>
-            </div>
-        </div>
-
-        <div class="hero-art-col">
-            <div class="hero-art-card">
-                <img src="ira.png" alt="IRA Holographic Assistant Interface" onerror="this.src='avatar.png'">
-
-                <!-- Floating Voice Audio Spectrum Widget -->
-                <div class="voice-spectrum-widget">
-                    <div class="spectrum-bars">
-                        <div class="spectrum-bar"></div>
-                        <div class="spectrum-bar"></div>
-                        <div class="spectrum-bar"></div>
-                        <div class="spectrum-bar"></div>
-                        <div class="spectrum-bar"></div>
-                    </div>
-                    <div class="spectrum-info">
-                        <div class="status">● GEMINI LIVE AUDIO ONLINE</div>
-                        <div class="sub">sub-200ms latency | Hinglish native</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- UNIQ BENTO GRID SECTION -->
-    <section class="bento-section" id="bento">
-        <span class="section-tag-mono">// ARCHITECTURE & SUPERPOWERS</span>
-        <h2 class="section-head-title">Asymmetrical Bento Engine</h2>
-
-        <div class="bento-grid">
-            
-            <!-- Cell 1: Screen Vision (Span 8) -->
-            <div class="bento-cell cell-span-8">
-                <div class="bento-icon-badge">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                </div>
-                <h3>Computational Screen Vision</h3>
-                <p>IRA takes verification screenshots using MSS and Pillow. She reads buttons, recognizes UI coordinates, and navigates desktop apps with human precision.</p>
-                <div class="bento-art-preview">
-                    <img src="screen read.png" alt="Screen Read Screenshot" onerror="this.src='ira.png'">
-                </div>
-            </div>
-
-            <!-- Cell 2: Gemini Live Voice (Span 4) -->
-            <div class="bento-cell cell-span-4">
-                <div class="bento-icon-badge" style="color:var(--purple); background:rgba(139,92,246,0.1); border-color:rgba(139,92,246,0.2);">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
-                </div>
-                <h3>Gemini Live Audio</h3>
-                <p>Sub-200ms real-time audio WebSocket via `gemini-3.1-flash-live-preview`. Full audio barge-in support.</p>
-                <div class="bento-art-preview" style="height:140px;">
-                    <img src="avatar.png" alt="AI Avatar render">
-                </div>
-            </div>
-
-            <!-- Cell 3: Persistent Memory (Span 4) -->
-            <div class="bento-cell cell-span-4">
-                <div class="bento-icon-badge" style="color:var(--emerald); background:rgba(16,185,129,0.1); border-color:rgba(16,185,129,0.2);">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-                </div>
-                <h3>Persistent Memory Graph</h3>
-                <p>Structured JSON memory saving preferences, active tasks, and context across sessions.</p>
-            </div>
-
-            <!-- Cell 4: WhatsApp & DOM Web Automation (Span 8) -->
-            <div class="bento-cell cell-span-8">
-                <div class="bento-icon-badge" style="color:var(--amber); background:rgba(245,158,11,0.1); border-color:rgba(245,158,11,0.2);">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
-                </div>
-                <h3>DOM Web & WhatsApp Automation</h3>
-                <p>Automates browser DOM actions, extracts live web data, and sends WhatsApp messages programmatically.</p>
-                <div class="bento-art-preview">
-                    <img src="brower controll.png" alt="Browser Control Screenshot" onerror="this.src='dashboard.png'">
-                </div>
-            </div>
-
-        </div>
-    </section>
-
-    <!-- INTERACTIVE SCREENSHOT GALLERY -->
-    <section class="gallery-section" id="gallery">
-        <span class="section-tag-mono">// REAL PRODUCT EVIDENCE</span>
-        <h2 class="section-head-title">Interface Screenshots</h2>
-
-        <div class="gallery-filter-bar">
-            <button class="filter-btn active" onclick="filterGrid('all')">All Images</button>
-            <button class="filter-btn" onclick="filterGrid('hud')">Hologram HUD</button>
-            <button class="filter-btn" onclick="filterGrid('dashboard')">Analytics & Memory</button>
-            <button class="filter-btn" onclick="filterGrid('tools')">Hardware & Gesture</button>
-            <button class="filter-btn" onclick="filterGrid('settings')">Settings & Themes</button>
-        </div>
-
-        <div class="gallery-mesh" id="galleryMesh">
-            
-            <div class="gallery-item-card" data-cat="hud" onclick="popModal('ira.png')">
-                <img src="ira.png" alt="IRA Hologram HUD" onerror="this.src='avatar.png'">
-                <div class="gallery-item-body">
-                    <h4>Holographic Desktop HUD</h4>
-                    <p>PySide6 QML transparent overlay with Live Voice & active logs.</p>
-                </div>
-            </div>
-
-            <div class="gallery-item-card" data-cat="dashboard" onclick="popModal('dashboard.png')">
-                <img src="dashboard.png" alt="Gold Market & Memory Dashboard" onerror="this.src='laptop.png'">
-                <div class="gallery-item-body">
-                    <h4>Market Insights & Workspace</h4>
-                    <p>Dynamic chart generation, live node visualizer, and memory graph.</p>
-                </div>
-            </div>
-
-            <div class="gallery-item-card" data-cat="tools" onclick="popModal('about.png')">
-                <img src="about.png" alt="Hardware & System Tools" onerror="this.src='core.png'">
-                <div class="gallery-item-body">
-                    <h4>System Architecture & Hardware</h4>
-                    <p>Hardware controls, Arduino servo motor API, and psutil stats.</p>
-                </div>
-            </div>
-
-            <div class="gallery-item-card" data-cat="hud" onclick="popModal('colashped.png')">
-                <img src="colashped.png" alt="Minimal Collapsed Pill Dock" onerror="this.src='ira.png'">
-                <div class="gallery-item-body">
-                    <h4>Floating Pill Dock</h4>
-                    <p>Compact dock mode with microphone toggle & text input field.</p>
-                </div>
-            </div>
-
-            <div class="gallery-item-card" data-cat="settings" onclick="popModal('settings.png')">
-                <img src="settings.png" alt="Settings & Multi-Theme Selector" onerror="this.src='avatar.png'">
-                <div class="gallery-item-body">
-                    <h4>Settings & Theme Selector</h4>
-                    <p>Multi-theme presets, auto-screenshot toggle, and key status.</p>
-                </div>
-            </div>
-
-            <div class="gallery-item-card" data-cat="tools" onclick="popModal('gesture controll.png')">
-                <img src="gesture controll.png" alt="Camera Vision & Gesture Control" onerror="this.src='core.png'">
-                <div class="gallery-item-body">
-                    <h4>Gesture Control Engine</h4>
-                    <p>OpenCV camera feed tracking hands and face gestures.</p>
-                </div>
-            </div>
-
-        </div>
-    </section>
-
-    <!-- LIGHTBOX MODAL -->
-    <div id="lightboxModal" onclick="closeModal()">
-        <span class="lightbox-close-btn">&times;</span>
-        <div class="lightbox-box" onclick="event.stopPropagation()">
-            <img id="modalImg" src="" alt="Full Screen Screenshot">
-        </div>
-    </div>
-
-    <!-- INTERACTIVE TERMINAL EXECUTOR -->
-    <section class="terminal-wrap" id="terminal">
-        <span class="section-tag-mono">// LIVE COMMAND EXECUTION</span>
-        <h2 class="section-head-title">Interactive Terminal</h2>
-
-        <div class="terminal-window">
-            <div class="term-topbar">
-                <div class="term-dots">
-                    <div class="t-dot t-red"></div>
-                    <div class="t-dot t-yellow"></div>
-                    <div class="t-dot t-green"></div>
-                </div>
-                <div class="term-label">IRA — Execution Console</div>
-            </div>
-
-            <div class="term-screen" id="termScreen">
-                <div class="t-dim">System initialized. Click a preset command below...</div>
-            </div>
-
-            <div class="term-actions-bar">
-                <button class="t-preset-btn" onclick="execPreset(1)">▶ Play YouTube Music</button>
-                <button class="t-preset-btn" onclick="execPreset(2)">▶ Check Gold Price Chart</button>
-                <button class="t-preset-btn" onclick="execPreset(3)">▶ Send WhatsApp Message</button>
-            </div>
-        </div>
-    </section>
-
-    <!-- CREATOR FOOTPRINT & PORTFOLIO LINKS -->
-    <section class="footprint-section" id="creators">
-        <span class="section-tag-mono">// CREATOR & INNOVATION LABS</span>
-        <h2 class="section-head-title">Official Links</h2>
-
-        <div class="footprint-grid">
-            
-            <div class="footprint-card">
-                <div class="footprint-avatar">👨‍💻</div>
-                <h3>Revant Sahu</h3>
-                <p>Creator & Lead AI Engineer building autonomous PC agents and multimodal AI assistants.</p>
-                <a href="https://revants.netlify.app" target="_blank" class="btn btn-op-primary" style="padding:10px 24px; font-size:0.88rem;">Visit Portfolio ↗</a>
-            </div>
-
-            <div class="footprint-card">
-                <div class="footprint-avatar" style="border-color:var(--purple); color:var(--purple);">🔬</div>
-                <h3>Nagchetra Labs</h3>
-                <p>Research & development lab specializing in vision models, computer use APIs, and real-time audio systems.</p>
-                <a href="https://nagchetra.netlify.app" target="_blank" class="btn btn-op-glass" style="padding:10px 24px; font-size:0.88rem;">Explore Nagchetra ↗</a>
-            </div>
-
-            <div class="footprint-card">
-                <div class="footprint-avatar" style="border-color:var(--green); color:var(--green);">🌐</div>
-                <h3>GitHub Repository</h3>
-                <p>Explore the complete open-source codebase, setup script, documentation, and MIT license.</p>
-                <a href="https://github.com/REvantsahu/ira-public-" target="_blank" class="btn btn-github" style="padding:10px 24px; font-size:0.88rem;">Open GitHub Repo ↗</a>
-            </div>
-
-        </div>
-    </section>
-
-    <!-- FOOTER -->
-    <footer>
-        <div class="footer-flex">
-            <div>
-                <h4 style="font-family:var(--font-display); font-size:1.4rem; color:#fff; text-transform:uppercase;">IRA v0.5 Beta</h4>
-                <p style="font-size:0.9rem; margin-top:4px;">Engineered by Revant Sahu @ Nagchetra Labs</p>
-            </div>
-
-            <ul class="footer-links-list">
-                <li><a href="https://github.com/REvantsahu/ira-public-" target="_blank">GitHub Repo</a></li>
-                <li><a href="https://revants.netlify.app" target="_blank">Revant's Portfolio</a></li>
-                <li><a href="https://nagchetra.netlify.app" target="_blank">Nagchetra Labs</a></li>
-            </ul>
-        </div>
-
-        <div class="footer-copy">
-            &copy; 2026 Revant (rebantsahu) & Nagchetra Labs. Released under MIT License.
-        </div>
-    </footer>
-
-    <!-- SCRIPTS -->
-    <script>
-        // ── CUSTOM CURSOR FOLLOWER ──
-        const dot = document.getElementById('cursor-dot');
-        const ring = document.getElementById('cursor-ring');
-
-        window.addEventListener('mousemove', (e) => {
-            dot.style.left = e.clientX + 'px';
-            dot.style.top = e.clientY + 'px';
-            ring.style.left = e.clientX + 'px';
-            ring.style.top = e.clientY + 'px';
-        });
-
-        // ── PRELOADER ──
-        let pct = 0;
-        const valEl = document.getElementById('loaderVal');
-        const subEl = document.getElementById('loaderSub');
-        const logs = [
-            "> INITIALIZING STITCH MCP CYBER-LUXE OBSIDIAN...",
-            "> MOUNTING SYNE DISPLAY TYPOGRAPHY & SPACE GROTESK...",
-            "> CONNECTING GEMINI 3.5 FLASH REASONING ENGINE...",
-            "> ACTIVATING GEMINI LIVE AUDIO WEBSOCKET...",
-            "> MOUNTING SCREEN VISION & DOM WHATSAPP BRIDGE...",
-            "> SYSTEM ONLINE."
-        ];
-
-        const timer = setInterval(() => {
-            pct += Math.floor(Math.random() * 10) + 4;
-            if (pct >= 100) {
-                pct = 100;
-                clearInterval(timer);
-                setTimeout(() => {
-                    document.getElementById('preloader').classList.add('fade-out');
-                }, 500);
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                "secondary": "#ebb2ff",
+                "secondary-container": "#b600f8",
+                "surface-container-low": "#1c1b1b",
+                "surface-tint": "#00dbe9",
+                "tertiary-container": "#cadbf5",
+                "on-background": "#e5e2e1",
+                "background": "#0b0b0e",
+                "surface": "#0b0b0e",
+                "primary-container": "#00f0ff",
+                "surface-container-high": "#2a2a2a",
+                "surface-container-lowest": "#0e0e0e",
+                "outline-variant": "#3b494b",
+                "primary": "#dbfcff",
+                "on-surface-variant": "#b9cacb"
+              },
+              "spacing": {
+                "container-max": "1440px",
+                "gutter": "24px",
+                "bento-gap": "16px",
+                "margin-edge": "40px"
+              },
+              "fontFamily": {
+                "display": ["Syne", "sans-serif"],
+                "body": ["Space Grotesk", "sans-serif"],
+                "mono": ["JetBrains Mono", "monospace"]
+              }
             }
-            valEl.textContent = pct + '%';
-            const idx = Math.min(Math.floor((pct / 100) * logs.length), logs.length - 1);
-            subEl.textContent = logs[idx];
-        }, 110);
-
-        // ── NAVBAR SCROLL ──
-        window.addEventListener('scroll', () => {
-            const nav = document.getElementById('navbar');
-            nav.classList.toggle('scrolled', window.scrollY > 60);
-        });
-
-        // ── GALLERY FILTER ──
-        function filterGrid(cat) {
-            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-            event.target.classList.add('active');
-
-            document.querySelectorAll('.gallery-item-card').forEach(card => {
-                if (cat === 'all' || card.dataset.cat === cat) {
-                    card.style.display = 'block';
-                } else {
-                    card.style.display = 'none';
-                }
-            });
-        }
-
-        // ── LIGHTBOX ──
-        function popModal(src) {
-            document.getElementById('modalImg').src = src;
-            document.getElementById('lightboxModal').classList.add('active');
-        }
-
-        function closeModal() {
-            document.getElementById('lightboxModal').classList.remove('active');
-        }
-
-        // ── TERMINAL EXECUTOR ──
-        const scripts = {
-            1: [
-                '<span class="t-user">You ></span> open YouTube and play KGF songs',
-                '<span class="t-dim">  ◎ 👁 Reading screen coordinates with MSS vision...</span>',
-                '<span class="t-dim">  ◎ 🧠 Gemini 3.5 Flash reasoning...</span>',
-                '<span class="t-tool">  [TOOL] browser_control(action="navigate", url="youtube.com")</span>',
-                '<span class="t-ira">  ✓ Navigated to YouTube successfully</span>',
-                '<span class="t-tool">  [TOOL] browser_control(action="type", text="KGF songs", press_enter=True)</span>',
-                '<span class="t-ira">  ✓ Playing KGF Songs video</span>',
-                '<span class="t-ira">IRA > Haan ji! KGF ke gaane chal rahe hain! 🎵</span>'
-            ],
-            2: [
-                '<span class="t-user">You ></span> show gold price trend chart for 2020-2024',
-                '<span class="t-dim">  ◎ 🧠 Querying financial search engine & memory...</span>',
-                '<span class="t-tool">  [TOOL] map_control(action="chart", title="Gold Market Insights")</span>',
-                '<span class="t-ira">  ✓ Rendered dynamic Gold price line chart in QML window</span>',
-                '<span class="t-ira">IRA > Gold prices ka dynamic chart aapke screen par hai! 📈</span>'
-            ],
-            3: [
-                '<span class="t-user">You ></span> send WhatsApp message to Mom saying I am reaching in 10 mins',
-                '<span class="t-dim">  ◎ 🌐 WhatsApp Bridge executing PyAutoGUI & DOM automation...</span>',
-                '<span class="t-tool">  [TOOL] whatsapp_control(contact="Mom", message="I am reaching in 10 mins")</span>',
-                '<span class="t-ira">  ✓ WhatsApp web opened, Mom contact selected, message sent.</span>',
-                '<span class="t-ira">IRA > Message send ho gaya Mom ko! 💬</span>'
-            ]
-        };
-
-        function execPreset(num) {
-            const screen = document.getElementById('termScreen');
-            screen.innerHTML = '';
-            const lines = scripts[num];
-            lines.forEach((l, i) => {
-                setTimeout(() => {
-                    const div = document.createElement('div');
-                    div.innerHTML = l;
-                    screen.appendChild(div);
-                    screen.scrollTop = screen.scrollHeight;
-                }, i * 600);
-            });
+          }
         }
     </script>
+</head>
+
+<body class="bg-background text-on-surface font-body antialiased">
+
+<!-- Ambient Nebulas -->
+<div class="nebula-glow bg-primary-container top-[-100px] left-[-100px]"></div>
+<div class="nebula-glow bg-secondary-container bottom-[-100px] right-[-100px]"></div>
+
+<!-- Navigation Shell -->
+<nav class="fixed top-4 left-1/2 -translate-x-1/2 w-[92%] rounded-full bg-surface/40 backdrop-blur-xl border border-white/10 z-50 shadow-[0_0_25px_rgba(0,240,255,0.15)]">
+<div class="flex justify-between items-center px-8 py-3 max-w-container-max mx-auto">
+<div class="flex items-center gap-3">
+    <img src="logo.png" alt="IRA Logo" class="w-8 h-8 rounded-lg shadow-[0_0_12px_#00f0ff]" onerror="this.src='avatar.png'">
+    <span class="font-display font-extrabold text-2xl text-primary-container tracking-tight">IRA <span class="text-xs font-mono px-2 py-0.5 rounded-full border border-primary-container/40 text-primary-container bg-primary-container/10">v0.5 Beta</span></span>
+</div>
+
+<div class="hidden md:flex gap-8 items-center">
+<a class="font-mono text-xs text-primary-container font-bold border-b border-primary-container uppercase tracking-wider transition-all duration-300 hover:scale-105" href="#hero">Neural Link</a>
+<a class="font-mono text-xs text-on-surface-variant font-medium uppercase tracking-wider hover:text-primary transition-all duration-300 hover:scale-105" href="#bento">Core Logic</a>
+<a class="font-mono text-xs text-on-surface-variant font-medium uppercase tracking-wider hover:text-primary transition-all duration-300 hover:scale-105" href="#gallery">Interface Evidence</a>
+<a class="font-mono text-xs text-on-surface-variant font-medium uppercase tracking-wider hover:text-primary transition-all duration-300 hover:scale-105" href="#terminal">Execution Log</a>
+<a class="font-mono text-xs text-on-surface-variant font-medium uppercase tracking-wider hover:text-primary transition-all duration-300 hover:scale-105" href="#creators">Creators</a>
+</div>
+
+<a href="https://github.com/REvantsahu/ira-public-" target="_blank" class="bg-primary-container text-black px-6 py-2.5 rounded-full font-mono text-xs font-bold transition-all duration-300 active:opacity-80 active:scale-95 hover:shadow-[0_0_20px_#00F0FF] flex items-center gap-2">
+    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+    GitHub Repo
+</a>
+</div>
+</nav>
+
+<main class="pt-32 pb-20 px-margin-edge max-w-container-max mx-auto" id="hero">
+
+<!-- Hero Section -->
+<section class="relative min-h-[700px] flex flex-col items-center justify-center text-center mb-32 overflow-hidden rounded-3xl">
+<div class="absolute inset-0 z-0">
+    <div class="absolute inset-0 holographic-overlay opacity-20"></div>
+</div>
+
+<div class="relative z-10 px-4">
+<div class="inline-flex items-center gap-2 px-5 py-1.5 mb-8 rounded-full bg-secondary-container/20 border border-secondary-container/40">
+<span class="material-symbols-outlined text-[16px] text-secondary" style="font-variation-settings: 'FILL' 1;">bolt</span>
+<span class="font-mono text-xs text-secondary uppercase tracking-widest font-semibold">Gemini 3.5 Flash & Live Audio Core Active</span>
+</div>
+
+<h1 class="font-display text-5xl md:text-7xl font-extrabold mb-6 text-white leading-none tracking-tight">
+    IRA v0.5 Beta:<br/>
+<span class="text-transparent bg-clip-text bg-gradient-to-r from-primary-container via-purple-400 to-secondary uppercase">The AI That Sees & Controls Your PC</span>
+</h1>
+
+<p class="font-body text-lg text-on-surface-variant max-w-3xl mx-auto mb-10 leading-relaxed">
+    IRA (Intelligent Responsive Assistant) is your warm, cheerful local AI companion. She sees your screen in real-time with computational vision, executes desktop mouse/keyboard actions, automates web DOM & WhatsApp, and remembers everything.
+</p>
+
+<div class="flex flex-wrap justify-center gap-6">
+<a href="https://github.com/REvantsahu/ira-public-" target="_blank" class="animate-float glass-card gradient-border px-10 py-5 rounded-xl font-mono text-xs font-bold text-primary-container tracking-[0.2em] hover:shadow-[0_0_35px_rgba(0,240,255,0.3)] flex items-center gap-3">
+    <span>INITIATE GITHUB LINK</span>
+    <span class="material-symbols-outlined text-sm">arrow_forward</span>
+</a>
+<a href="https://revants.netlify.app" target="_blank" class="px-10 py-5 rounded-xl font-mono text-xs font-bold text-on-surface-variant hover:text-white transition-colors border border-white/10 glass-card">
+    REVANT'S PORTFOLIO ↗
+</a>
+</div>
+</div>
+</section>
+
+<!-- Bento Grid Section -->
+<section class="grid grid-cols-1 md:grid-cols-12 gap-bento-gap mb-32" id="bento">
+
+<!-- Vision Core Card (Span 8) -->
+<div class="md:col-span-8 glass-card rounded-2xl p-gutter relative overflow-hidden group min-h-[420px] border border-white/10">
+<div class="absolute top-6 right-6 z-10">
+<div class="w-12 h-12 rounded-full border border-primary-container/30 flex items-center justify-center group-hover:border-primary-container/100 transition-colors bg-black/40 backdrop-blur-md">
+<span class="material-symbols-outlined text-primary-container" style="font-variation-settings: 'FILL' 1;">visibility</span>
+</div>
+</div>
+
+<div class="relative z-10 h-full flex flex-col justify-end">
+<span class="font-mono text-xs text-primary-container uppercase tracking-widest mb-1">// SCREEN VISION & CONTEXT ENGINE</span>
+<h3 class="font-display text-3xl font-bold mb-3 text-white">Computational Screen Vision</h3>
+<p class="font-body text-on-surface-variant max-w-lg mb-4">Takes verification screenshots with MSS & Pillow. Recognizes UI coordinates, buttons, text fields, and desktop software with sub-millisecond precision.</p>
+</div>
+
+<!-- Real Screen Read Image Preview -->
+<div class="absolute top-0 right-0 w-full h-full z-0 opacity-40 group-hover:opacity-75 transition-opacity">
+<img src="screen read.png" alt="Screen Read Interface" class="w-full h-full object-cover" onerror="this.src='ira.png'">
+</div>
+</div>
+
+<!-- Execution Terminal (Span 4) -->
+<div class="md:col-span-4 glass-card rounded-2xl p-gutter bg-surface-container-lowest border-outline-variant/20 flex flex-col min-h-[420px]">
+<div class="flex items-center justify-between mb-6 border-b border-outline-variant/30 pb-4">
+<div class="flex gap-2">
+<div class="w-3 h-3 rounded-full bg-red-500"></div>
+<div class="w-3 h-3 rounded-full bg-amber-500"></div>
+<div class="w-3 h-3 rounded-full bg-emerald-500"></div>
+</div>
+<span class="font-mono text-xs text-on-tertiary-fixed-variant font-bold">EXECUTION_CORE_v0.5</span>
+</div>
+<div class="font-mono text-xs space-y-3 overflow-hidden flex-1">
+<p class="text-primary-container">$ initiate_neural_handshake()</p>
+<p class="text-on-surface-variant opacity-70">&gt; Gemini 3.5 Flash Reasoning...</p>
+<p class="text-on-surface-variant opacity-70">&gt; Screen Vision: [MSS 1080p]</p>
+<p class="text-secondary">&gt; Gemini Live Audio: 200ms</p>
+<p class="text-primary-container">$ exec_tool --browser_control</p>
+<p class="text-on-surface-variant opacity-70">&gt; Navigating YouTube & WhatsApp...</p>
+<div class="w-full h-1.5 bg-outline-variant/20 rounded-full overflow-hidden my-2">
+<div class="h-full bg-gradient-to-r from-primary-container to-secondary w-4/5 animate-pulse"></div>
+</div>
+<p class="text-primary-container">SUCCESS: 88 Tools Ready.<span class="cursor-blink"></span></p>
+<p class="text-on-surface-variant mt-6 opacity-40">$ _</p>
+</div>
+</div>
+
+<!-- Voice Spectrum (Span 6) -->
+<div class="md:col-span-6 glass-card rounded-2xl p-gutter relative min-h-[320px] overflow-hidden border border-white/10">
+<div class="flex justify-between items-start mb-8 relative z-10">
+<div>
+<span class="font-mono text-xs text-secondary uppercase tracking-widest mb-1">// WEBSOCKET LIVE AUDIO</span>
+<h3 class="font-display text-2xl font-bold text-white">Gemini Live Voice Engine</h3>
+<p class="font-body text-sm text-on-surface-variant mt-2 max-w-md">Sub-200ms real-time audio WebSocket stream using `gemini-3.1-flash-live-preview`. Speaks Hinglish naturally with full audio barge-in support.</p>
+</div>
+<span class="material-symbols-outlined text-secondary text-3xl" style="font-variation-settings: 'FILL' 1;">graphic_eq</span>
+</div>
+
+<div class="absolute bottom-6 left-6 right-6 h-20 flex items-end gap-1.5">
+<div class="w-2 bg-primary-container rounded-full h-1/2 animate-pulse"></div>
+<div class="w-2 bg-secondary rounded-full h-4/5 animate-pulse"></div>
+<div class="w-2 bg-primary-container rounded-full h-3/5 animate-pulse"></div>
+<div class="w-2 bg-secondary rounded-full h-full animate-pulse"></div>
+<div class="w-2 bg-primary-container rounded-full h-2/3 animate-pulse"></div>
+<div class="w-2 bg-secondary rounded-full h-1/3 animate-pulse"></div>
+<div class="w-2 bg-primary-container rounded-full h-4/5 animate-pulse"></div>
+<div class="w-2 bg-secondary rounded-full h-3/4 animate-pulse"></div>
+</div>
+</div>
+
+<!-- WhatsApp & DOM Automation (Span 6) -->
+<div class="md:col-span-6 glass-card rounded-2xl p-gutter relative min-h-[320px] overflow-hidden border border-white/10">
+<div class="flex justify-between items-start mb-4 relative z-10">
+<div>
+<span class="font-mono text-xs text-primary-container uppercase tracking-widest mb-1">// DOM BROWSER AUTOMATION</span>
+<h3 class="font-display text-2xl font-bold text-white">WhatsApp & DOM Automation</h3>
+<p class="font-body text-sm text-on-surface-variant mt-2 max-w-md">Automates browser DOM, opens WhatsApp Web, selects contacts, formats text, and sends messages programmatically.</p>
+</div>
+<span class="material-symbols-outlined text-primary-container text-3xl">chat</span>
+</div>
+
+<div class="mt-4 rounded-xl overflow-hidden border border-white/10 h-36">
+<img src="brower controll.png" alt="Browser Control Screenshot" class="w-full h-full object-cover opacity-65 hover:opacity-100 transition-opacity" onerror="this.src='dashboard.png'">
+</div>
+</div>
+
+<!-- Signature Card (Span 12) -->
+<div class="md:col-span-12 glass-card rounded-2xl p-8 bg-gradient-to-br from-surface-container-high to-surface-container-lowest border-white/10 flex items-center justify-between">
+<div class="flex items-center gap-6">
+<div class="w-16 h-16 rounded-2xl bg-primary-container/10 flex items-center justify-center border border-primary-container/30 shadow-[0_0_20px_rgba(0,240,255,0.2)]">
+<span class="font-display font-black text-2xl text-primary-container">REV</span>
+</div>
+<div>
+<h4 class="font-mono text-xs text-on-surface-variant uppercase tracking-[0.2em]">Creator & Research Lab</h4>
+<div class="font-display text-2xl text-white mt-1 font-bold">Revant Sahu @ Nagchetra Labs</div>
+<p class="font-body text-sm text-on-surface-variant mt-1">Autonomous PC AI Agents, Multimodal Vision Models, and Real-Time Audio Infrastructure.</p>
+</div>
+</div>
+
+<div class="hidden md:flex gap-4">
+<a href="https://revants.netlify.app" target="_blank" class="px-6 py-2.5 rounded-full font-mono text-xs font-bold bg-primary-container text-black hover:shadow-[0_0_15px_#00F0FF] transition-all">Revant Portfolio ↗</a>
+<a href="https://nagchetra.netlify.app" target="_blank" class="px-6 py-2.5 rounded-full font-mono text-xs font-bold border border-white/20 text-white hover:border-secondary transition-all">Nagchetra Labs ↗</a>
+</div>
+</div>
+
+</section>
+
+<!-- REAL PRODUCT SCREENSHOT GALLERY SHOWCASE -->
+<section class="mb-32" id="gallery">
+<div class="text-center mb-12">
+    <span class="font-mono text-xs text-primary-container uppercase tracking-widest">// EVIDENCE OF EXECUTION</span>
+    <h2 class="font-display text-4xl font-extrabold text-white mt-2">REAL PRODUCT INTERFACE</h2>
+    <p class="font-body text-on-surface-variant max-w-xl mx-auto mt-2">Click any screenshot to inspect IRA's transparent PySide6 overlay, floating cards, settings menu, and gesture camera in full 4K detail.</p>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+    <div class="glass-card rounded-2xl overflow-hidden cursor-pointer group border border-white/10" onclick="openLightboxModal('ira.png')">
+        <div class="h-60 overflow-hidden">
+            <img src="ira.png" alt="IRA Hologram HUD" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onerror="this.src='avatar.png'">
+        </div>
+        <div class="p-6 bg-black/60">
+            <h4 class="font-display font-bold text-lg text-white">Holographic Desktop HUD</h4>
+            <p class="font-body text-xs text-on-surface-variant mt-1">Floating PySide6 QML transparent overlay with Live Voice & active execution logs.</p>
+        </div>
+    </div>
+
+    <div class="glass-card rounded-2xl overflow-hidden cursor-pointer group border border-white/10" onclick="openLightboxModal('dashboard.png')">
+        <div class="h-60 overflow-hidden">
+            <img src="dashboard.png" alt="Gold Market & Memory Dashboard" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onerror="this.src='laptop.png'">
+        </div>
+        <div class="p-6 bg-black/60">
+            <h4 class="font-display font-bold text-lg text-white">Market Insights & Workspace</h4>
+            <p class="font-body text-xs text-on-surface-variant mt-1">Dynamic chart generation, live node visualizer, and structured memory panel.</p>
+        </div>
+    </div>
+
+    <div class="glass-card rounded-2xl overflow-hidden cursor-pointer group border border-white/10" onclick="openLightboxModal('about.png')">
+        <div class="h-60 overflow-hidden">
+            <img src="about.png" alt="Hardware & System Tools" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onerror="this.src='core.png'">
+        </div>
+        <div class="p-6 bg-black/60">
+            <h4 class="font-display font-bold text-lg text-white">Core System & Hardware Tools</h4>
+            <p class="font-body text-xs text-on-surface-variant mt-1">Hardware controls, Arduino servo motor API, and psutil system monitor.</p>
+        </div>
+    </div>
+
+    <div class="glass-card rounded-2xl overflow-hidden cursor-pointer group border border-white/10" onclick="openLightboxModal('colashped.png')">
+        <div class="h-60 overflow-hidden">
+            <img src="colashped.png" alt="Minimal Floating Pill Dock" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onerror="this.src='ira.png'">
+        </div>
+        <div class="p-6 bg-black/60">
+            <h4 class="font-display font-bold text-lg text-white">Minimal Floating Pill Dock</h4>
+            <p class="font-body text-xs text-on-surface-variant mt-1">Compact collapsed dock mode with quick microphone toggle & text input field.</p>
+        </div>
+    </div>
+
+    <div class="glass-card rounded-2xl overflow-hidden cursor-pointer group border border-white/10" onclick="openLightboxModal('settings.png')">
+        <div class="h-60 overflow-hidden">
+            <img src="settings.png" alt="Settings & Multi-Theme Selector" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onerror="this.src='avatar.png'">
+        </div>
+        <div class="p-6 bg-black/60">
+            <h4 class="font-display font-bold text-lg text-white">Settings & Multi-Theme Selector</h4>
+            <p class="font-body text-xs text-on-surface-variant mt-1">Hologram theme presets, auto-screenshot toggle, and multi-key status.</p>
+        </div>
+    </div>
+
+    <div class="glass-card rounded-2xl overflow-hidden cursor-pointer group border border-white/10" onclick="openLightboxModal('gesture controll.png')">
+        <div class="h-60 overflow-hidden">
+            <img src="gesture controll.png" alt="Camera Vision & Gesture Control" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onerror="this.src='core.png'">
+        </div>
+        <div class="p-6 bg-black/60">
+            <h4 class="font-display font-bold text-lg text-white">Gesture Control Engine</h4>
+            <p class="font-body text-xs text-on-surface-variant mt-1">OpenCV camera feed tracking hand gestures and face tracking.</p>
+        </div>
+    </div>
+
+</div>
+</section>
+
+<!-- LIGHTBOX MODAL -->
+<div id="lightboxModal" onclick="closeLightboxModal()">
+    <span class="lightbox-close-btn">&times;</span>
+    <div class="lightbox-box" onclick="event.stopPropagation()">
+        <img id="lightboxModalImg" src="" alt="Full Screen Screenshot">
+    </div>
+</div>
+
+<!-- Technical Specs Section -->
+<section class="mt-20 grid grid-cols-1 md:grid-cols-3 gap-gutter" id="creators">
+<div class="p-gutter border-l border-outline-variant/30 glass-card rounded-2xl">
+<div class="text-primary-container font-mono mb-4 text-xs font-bold">// REVANT SAHU</div>
+<h4 class="font-display text-2xl font-bold mb-3 text-white">Revant Sahu Portfolio</h4>
+<p class="text-on-surface-variant font-body text-sm mb-4">Lead AI Engineer building next-gen autonomous desktop agents, vision models, and multimodal tools.</p>
+<a href="https://revants.netlify.app" target="_blank" class="font-mono text-xs text-primary-container font-bold hover:underline">revants.netlify.app ↗</a>
+</div>
+
+<div class="p-gutter border-l border-outline-variant/30 glass-card rounded-2xl">
+<div class="text-secondary font-mono mb-4 text-xs font-bold">// NAGCHETRA LABS</div>
+<h4 class="font-display text-2xl font-bold mb-3 text-white">Nagchetra Research</h4>
+<p class="text-on-surface-variant font-body text-sm mb-4">Research & development lab specializing in vision systems, computer use APIs, and real-time audio.</p>
+<a href="https://nagchetra.netlify.app" target="_blank" class="font-mono text-xs text-secondary font-bold hover:underline">nagchetra.netlify.app ↗</a>
+</div>
+
+<div class="p-gutter border-l border-outline-variant/30 glass-card rounded-2xl">
+<div class="text-white font-mono mb-4 text-xs font-bold">// OPEN SOURCE REPO</div>
+<h4 class="font-display text-2xl font-bold mb-3 text-white">Public GitHub Repo</h4>
+<p class="text-on-surface-variant font-body text-sm mb-4">Explore the complete open-source codebase, setup script, documentation, and MIT license.</p>
+<a href="https://github.com/REvantsahu/ira-public-" target="_blank" class="font-mono text-xs text-white font-bold hover:underline">github.com/REvantsahu/ira-public- ↗</a>
+</div>
+</section>
+
+</main>
+
+<!-- Footer Shell -->
+<footer class="w-full border-t border-outline-variant/20 bg-surface-container-lowest mt-20">
+<div class="flex flex-col md:flex-row justify-between items-center px-margin-edge py-12 w-full max-w-container-max mx-auto">
+<div class="mb-8 md:mb-0">
+<div class="font-display text-xl text-primary font-bold">IRA v0.5 Beta — Neural Assistant</div>
+<p class="font-mono text-xs text-on-tertiary-fixed-variant uppercase tracking-widest mt-1">© 2026 Revant (@rebantsahu) & Nagchetra Labs. MIT License.</p>
+</div>
+<div class="flex flex-wrap justify-center gap-8">
+<a class="font-mono text-xs text-on-tertiary-fixed-variant transition-colors hover:text-primary-fixed hover:underline" href="https://github.com/REvantsahu/ira-public-" target="_blank">GitHub Repository</a>
+<a class="font-mono text-xs text-on-tertiary-fixed-variant transition-colors hover:text-primary-fixed hover:underline" href="https://revants.netlify.app" target="_blank">Revant Sahu Portfolio</a>
+<a class="font-mono text-xs text-on-tertiary-fixed-variant transition-colors hover:text-primary-fixed hover:underline" href="https://nagchetra.netlify.app" target="_blank">Nagchetra Labs</a>
+</div>
+</div>
+</footer>
+
+<script>
+    // Parallax background glow
+    document.addEventListener('mousemove', (e) => {
+        const moveX = (e.clientX - window.innerWidth / 2) / 40;
+        const moveY = (e.clientY - window.innerHeight / 2) / 40;
+        
+        document.querySelectorAll('.nebula-glow').forEach((nebula, index) => {
+            const factor = (index + 1) * 0.6;
+            nebula.style.transform = `translate(${moveX * factor}px, ${moveY * factor}px)`;
+        });
+    });
+
+    // Lightbox modal helpers
+    function openLightboxModal(src) {
+        document.getElementById('lightboxModalImg').src = src;
+        document.getElementById('lightboxModal').classList.add('active');
+    }
+
+    function closeLightboxModal() {
+        document.getElementById('lightboxModal').classList.remove('active');
+    }
+</script>
+
 </body>
 </html>
