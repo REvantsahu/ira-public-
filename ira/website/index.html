@@ -3,34 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IRA — Next-Gen Desktop AI Agent | Powered by Gemini</title>
-    <meta name="description" content="IRA is an intelligent responsive desktop AI agent that sees your screen, controls your PC, and remembers everything. Built by Revant @ Nagchetra Labs.">
+    <title>IRA v0.5 Beta — Next-Gen Desktop AI Agent</title>
+    <meta name="description" content="IRA is a high-tech desktop AI assistant that sees your screen, controls your PC, and remembers everything. Developed by Revant @ Nagchetra Labs.">
     <link rel="icon" href="logo.png" type="image/png">
     
-    <!-- Google Fonts -->
+    <!-- Unique High-Character Fonts: Syne (Hero Display), Space Grotesk (Body & UI), JetBrains Mono (Code & Technical) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&family=Space+Grotesk:wght@400;500;600;700&family=Syne:wght@700;800;900&display=swap" rel="stylesheet">
 
     <style>
         :root {
-            --bg-dark: #050508;
-            --bg-card: rgba(18, 18, 28, 0.7);
-            --bg-card-hover: rgba(26, 26, 42, 0.85);
-            --border-glass: rgba(255, 255, 255, 0.08);
-            --border-accent: rgba(0, 240, 255, 0.3);
+            --bg-obsidian: #030306;
+            --bg-glass: rgba(12, 12, 20, 0.65);
+            --bg-glass-hover: rgba(20, 20, 34, 0.85);
+            --border-glow: rgba(0, 240, 255, 0.25);
+            --border-dim: rgba(255, 255, 255, 0.07);
             
             --cyan: #00f0ff;
             --purple: #8b5cf6;
             --pink: #ec4899;
-            --emerald: #10b981;
+            --green: #10b981;
             --amber: #f59e0b;
             
-            --text-main: #f3f4f6;
-            --text-muted: #9ca3af;
-            --text-dim: #6b7280;
-            
-            --font-main: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-display: 'Syne', sans-serif;
+            --font-body: 'Space Grotesk', sans-serif;
             --font-mono: 'JetBrains Mono', monospace;
         }
 
@@ -42,21 +39,46 @@
         }
 
         body {
-            background-color: var(--bg-dark);
-            color: var(--text-main);
-            font-family: var(--font-main);
+            background-color: var(--bg-obsidian);
+            color: #f3f4f6;
+            font-family: var(--font-body);
             overflow-x: hidden;
             line-height: 1.6;
-            selection-background-color: var(--cyan);
-            selection-color: #000;
+            cursor: default;
         }
 
-        /* ── PRELOADER ── */
+        /* ── CUSTOM GLOWING CURSOR ── */
+        #cursor-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--cyan);
+            border-radius: 50%;
+            position: fixed;
+            pointer-events: none;
+            z-index: 999999;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 12px var(--cyan);
+            transition: width 0.2s, height 0.2s, background-color 0.2s;
+        }
+
+        #cursor-ring {
+            width: 36px;
+            height: 36px;
+            border: 1.5px solid rgba(0, 240, 255, 0.5);
+            border-radius: 50%;
+            position: fixed;
+            pointer-events: none;
+            z-index: 999998;
+            transform: translate(-50%, -50%);
+            transition: transform 0.15s ease-out, border-color 0.2s;
+        }
+
+        /* ── CYBER PRELOADER ── */
         #preloader {
             position: fixed;
             inset: 0;
-            background: #030305;
-            z-index: 99999;
+            background: #020204;
+            z-index: 9999999;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -69,59 +91,68 @@
             visibility: hidden;
         }
 
-        .loader-ring {
-            width: 100px;
-            height: 100px;
+        .loader-ring-outer {
+            width: 110px;
+            height: 110px;
             border-radius: 50%;
-            border: 3px solid rgba(0, 240, 255, 0.1);
-            border-top: 3px solid var(--cyan);
-            border-right: 3px solid var(--purple);
-            animation: spin 1s linear infinite;
-            position: relative;
+            border: 2px dashed rgba(0, 240, 255, 0.2);
+            border-top: 2px solid var(--cyan);
+            border-bottom: 2px solid var(--purple);
+            animation: spin 1.2s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
             margin-bottom: 2rem;
-            box-shadow: 0 0 30px rgba(0, 240, 255, 0.2);
-        }
-
-        .loader-ring::after {
-            content: '';
-            position: absolute;
-            inset: 10px;
-            border-radius: 50%;
-            border: 2px solid transparent;
-            border-bottom: 2px solid var(--pink);
-            animation: spin-reverse 0.7s linear infinite;
+            position: relative;
         }
 
         @keyframes spin { 100% { transform: rotate(360deg); } }
-        @keyframes spin-reverse { 100% { transform: rotate(-360deg); } }
 
-        .loader-counter {
-            font-family: var(--font-mono);
-            font-size: 2.5rem;
-            font-weight: 700;
+        .loader-val {
+            font-family: var(--font-display);
+            font-size: 3rem;
+            font-weight: 900;
+            letter-spacing: -0.04em;
             background: linear-gradient(135deg, var(--cyan), var(--purple));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            margin-bottom: 0.5rem;
         }
 
-        .loader-logs {
+        .loader-sub {
             font-family: var(--font-mono);
             font-size: 0.85rem;
             color: var(--cyan);
-            height: 24px;
-            text-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
+            margin-top: 8px;
+            letter-spacing: 0.1em;
         }
 
-        /* ── CANVAS BACKGROUNDS ── */
-        #particleCanvas {
+        /* ── AMBIENT BACKGROUND GLOWS & GRID ── */
+        .cyber-grid {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
+            inset: 0;
+            background-image: 
+                linear-gradient(rgba(0, 240, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 240, 255, 0.02) 1px, transparent 1px);
+            background-size: 80px 80px;
+            z-index: -2;
             pointer-events: none;
+        }
+
+        .ambient-glow {
+            position: fixed;
+            width: 650px;
+            height: 650px;
+            border-radius: 50%;
+            filter: blur(180px);
+            opacity: 0.12;
             z-index: -1;
+            pointer-events: none;
+            animation: floatGlow 25s ease-in-out infinite alternate;
+        }
+
+        .glow-1 { top: -200px; left: -100px; background: var(--cyan); }
+        .glow-2 { bottom: -200px; right: -100px; background: var(--purple); }
+
+        @keyframes floatGlow {
+            0% { transform: translate(0, 0) scale(1); }
+            100% { transform: translate(80px, -60px) scale(1.15); }
         }
 
         /* ── NAVIGATION ── */
@@ -130,540 +161,487 @@
             top: 0;
             left: 0;
             right: 0;
-            z-index: 1000;
-            padding: 1rem 3rem;
+            z-index: 10000;
+            padding: 1.2rem 4rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            background: rgba(5, 5, 8, 0.75);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border-bottom: 1px solid var(--border-glass);
+            background: rgba(3, 3, 6, 0.7);
+            backdrop-filter: blur(25px);
+            border-bottom: 1px solid var(--border-dim);
             transition: all 0.4s ease;
         }
 
         nav.scrolled {
-            padding: 0.75rem 3rem;
-            background: rgba(5, 5, 8, 0.95);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            padding: 0.8rem 4rem;
+            background: rgba(3, 3, 6, 0.95);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
         }
 
-        .nav-logo {
+        .brand-logo {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 14px;
             text-decoration: none;
         }
 
-        .nav-logo img {
-            width: 38px;
-            height: 38px;
-            border-radius: 10px;
-            box-shadow: 0 0 15px rgba(0, 240, 255, 0.4);
+        .brand-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: var(--font-display);
+            font-weight: 900;
+            font-size: 1.3rem;
+            color: #000;
+            box-shadow: 0 0 20px rgba(0, 240, 255, 0.4);
         }
 
-        .nav-brand {
-            font-size: 1.4rem;
+        .brand-name {
+            font-family: var(--font-display);
+            font-size: 1.5rem;
             font-weight: 800;
             color: #fff;
             letter-spacing: -0.02em;
         }
 
-        .version-tag {
-            font-size: 0.75rem;
+        .v-badge {
             font-family: var(--font-mono);
+            font-size: 0.72rem;
             font-weight: 600;
             color: var(--cyan);
             background: rgba(0, 240, 255, 0.1);
             border: 1px solid rgba(0, 240, 255, 0.3);
-            padding: 2px 8px;
+            padding: 3px 10px;
             border-radius: 20px;
-            margin-left: 6px;
+            margin-left: 8px;
         }
 
-        .nav-links {
+        .nav-items {
             display: flex;
-            gap: 2.2rem;
+            gap: 2.5rem;
             list-style: none;
         }
 
-        .nav-links a {
-            color: var(--text-muted);
+        .nav-items a {
+            color: #a0a0b8;
             text-decoration: none;
             font-weight: 500;
             font-size: 0.95rem;
             transition: color 0.3s ease;
-            position: relative;
         }
 
-        .nav-links a:hover {
-            color: var(--cyan);
-        }
-
-        .nav-actions {
-            display: flex;
-            align-items: center;
-            gap: 1.2rem;
-        }
-
-        .status-badge {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.85rem;
-            font-family: var(--font-mono);
-            color: var(--emerald);
-            background: rgba(16, 185, 129, 0.1);
-            border: 1px solid rgba(16, 185, 129, 0.2);
-            padding: 4px 12px;
-            border-radius: 20px;
-        }
-
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            background: var(--emerald);
-            border-radius: 50%;
-            box-shadow: 0 0 10px var(--emerald);
-            animation: pulse-dot 2s infinite;
-        }
-
-        @keyframes pulse-dot {
-            0%, 100% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.5; transform: scale(1.3); }
-        }
+        .nav-items a:hover { color: var(--cyan); }
 
         /* ── BUTTONS ── */
         .btn {
             display: inline-flex;
             align-items: center;
             gap: 10px;
-            padding: 12px 28px;
-            border-radius: 12px;
+            padding: 14px 32px;
+            border-radius: 14px;
             font-weight: 600;
             font-size: 0.95rem;
             text-decoration: none;
             cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
             border: none;
         }
 
-        .btn-primary {
+        .btn-op-primary {
             background: linear-gradient(135deg, var(--cyan), var(--purple));
-            color: #fff;
-            box-shadow: 0 0 25px rgba(0, 240, 255, 0.3);
+            color: #000;
+            font-weight: 700;
+            box-shadow: 0 0 30px rgba(0, 240, 255, 0.35);
         }
 
-        .btn-primary:hover {
+        .btn-op-primary:hover {
             transform: translateY(-3px) scale(1.02);
-            box-shadow: 0 0 35px rgba(0, 240, 255, 0.5);
+            box-shadow: 0 0 45px rgba(0, 240, 255, 0.6);
         }
 
-        .btn-secondary {
-            background: var(--bg-card);
-            color: var(--text-main);
-            border: 1px solid var(--border-glass);
-            backdrop-filter: blur(10px);
+        .btn-op-glass {
+            background: var(--bg-glass);
+            color: #fff;
+            border: 1px solid var(--border-glow);
+            backdrop-filter: blur(15px);
         }
 
-        .btn-secondary:hover {
+        .btn-op-glass:hover {
             border-color: var(--cyan);
-            background: var(--bg-card-hover);
+            background: var(--bg-glass-hover);
             transform: translateY(-3px);
             color: var(--cyan);
         }
 
         .btn-github {
-            background: #181717;
+            background: #11111a;
             color: #fff;
             border: 1px solid rgba(255, 255, 255, 0.15);
         }
 
         .btn-github:hover {
-            background: #242222;
             border-color: #fff;
-            transform: translateY(-3px);
+            transform: translateY(-2px);
         }
 
-        /* ── HERO SECTION ── */
-        .hero {
+        /* ── HERO SECTION (ASYMMETRICAL DRAMATIC TYPE) ── */
+        .hero-section {
             min-height: 100vh;
-            padding: 9rem 2rem 5rem;
-            display: flex;
-            flex-direction: column;
+            padding: 11rem 4rem 6rem;
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1.2fr 1fr;
+            gap: 4rem;
             align-items: center;
-            justify-content: center;
-            text-align: center;
-            position: relative;
         }
 
-        .hero-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 18px;
-            border-radius: 30px;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid var(--border-glass);
-            backdrop-filter: blur(10px);
+        .hero-text-col {
+            text-align: left;
+        }
+
+        .hero-eyebrow {
+            font-family: var(--font-mono);
             font-size: 0.85rem;
-            color: var(--text-muted);
-            margin-bottom: 2rem;
-            animation: fadeInDown 0.8s ease;
-        }
-
-        .hero h1 {
-            font-size: clamp(2.8rem, 7vw, 5.5rem);
-            font-weight: 900;
-            line-height: 1.1;
-            letter-spacing: -0.03em;
-            max-width: 1000px;
+            color: var(--cyan);
+            text-transform: uppercase;
+            letter-spacing: 0.18em;
             margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
-        .gradient-text {
+        .hero-eyebrow::before {
+            content: '';
+            width: 24px;
+            height: 2px;
+            background: var(--cyan);
+        }
+
+        /* OP HERO TITLE WITH SYNE DISPLAY FONT */
+        .hero-title {
+            font-family: var(--font-display);
+            font-size: clamp(3.2rem, 6.5vw, 5.8rem);
+            font-weight: 900;
+            line-height: 1.02;
+            letter-spacing: -0.04em;
+            margin-bottom: 2rem;
+            text-transform: uppercase;
+        }
+
+        .hero-title .text-cyan {
             background: linear-gradient(135deg, var(--cyan), #38bdf8);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
-        .gradient-text-2 {
+        .hero-title .text-purple {
             background: linear-gradient(135deg, var(--purple), var(--pink));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
-        .hero p {
+        .hero-desc {
             font-size: 1.25rem;
-            color: var(--text-muted);
-            max-width: 680px;
-            margin-bottom: 2.5rem;
+            color: #a0a0b8;
+            max-width: 620px;
+            margin-bottom: 3rem;
             font-weight: 400;
+            line-height: 1.7;
         }
 
-        .hero-ctas {
+        .hero-actions {
             display: flex;
             gap: 1.2rem;
-            margin-bottom: 4rem;
             flex-wrap: wrap;
-            justify-content: center;
         }
 
-        /* ── FLOATING 3D TECH ECOSYSTEM ── */
-        .tech-stage {
+        /* HERO ARTWORK FRAME & VOICE SPECTRUM WIDGET */
+        .hero-art-col {
             position: relative;
-            width: 100%;
-            max-width: 1000px;
-            height: 520px;
-            margin-top: 1rem;
             display: flex;
-            align-items: center;
             justify-content: center;
-            perspective: 1200px;
         }
 
-        .main-avatar-frame {
-            position: relative;
-            width: 700px;
-            height: 420px;
-            border-radius: 20px;
-            background: rgba(18, 18, 28, 0.6);
-            border: 1px solid var(--border-accent);
-            box-shadow: 0 0 50px rgba(0, 240, 255, 0.15), inset 0 0 30px rgba(0, 240, 255, 0.05);
+        .hero-art-card {
+            width: 100%;
+            max-width: 540px;
+            height: 480px;
+            border-radius: 24px;
+            background: var(--bg-glass);
+            border: 1px solid var(--border-glow);
+            box-shadow: 0 0 60px rgba(0, 240, 255, 0.15);
+            backdrop-filter: blur(20px);
             overflow: hidden;
-            backdrop-filter: blur(15px);
+            position: relative;
+            transform: perspective(1000px) rotateY(-6deg) rotateX(4deg);
             transition: transform 0.5s cubic-bezier(0.1, 1, 0.1, 1);
-            transform-style: preserve-3d;
         }
 
-        .main-avatar-frame img {
+        .hero-art-card:hover {
+            transform: perspective(1000px) rotateY(0deg) rotateX(0deg);
+        }
+
+        .hero-art-card img {
             width: 100%;
             height: 100%;
             object-fit: cover;
-            filter: brightness(1.05) contrast(1.1);
         }
 
-        /* Floating 3D SVGs & Cards around Hero */
-        .float-element {
+        /* FLOATING VOICE AUDIO SPECTRUM WIDGET ON HERO */
+        .voice-spectrum-widget {
             position: absolute;
-            background: rgba(18, 18, 28, 0.85);
-            border: 1px solid var(--border-glass);
-            border-radius: 16px;
-            padding: 1rem;
-            backdrop-filter: blur(20px);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
-            z-index: 10;
-            animation: float-slow 6s ease-in-out infinite;
-        }
-
-        .float-laptop {
-            top: -20px;
-            left: -40px;
-            animation-delay: 0s;
-        }
-
-        .float-mobile {
-            bottom: 20px;
-            right: -30px;
-            animation-delay: -2s;
-        }
-
-        .float-hud-ring {
-            top: 40px;
-            right: -40px;
-            animation-delay: -4s;
-        }
-
-        @keyframes float-slow {
-            0%, 100% { transform: translateY(0px) rotate(0deg); }
-            50% { transform: translateY(-15px) rotate(2deg); }
-        }
-
-        /* ── SECTION HEADER ── */
-        .section-header {
-            text-align: center;
-            max-width: 750px;
-            margin: 0 auto 4rem;
-        }
-
-        .section-tag {
-            font-family: var(--font-mono);
-            font-size: 0.85rem;
-            color: var(--cyan);
-            text-transform: uppercase;
-            letter-spacing: 0.15em;
-            margin-bottom: 1rem;
-            display: inline-block;
-        }
-
-        .section-title {
-            font-size: clamp(2rem, 4.5vw, 3.2rem);
-            font-weight: 800;
-            line-height: 1.15;
-            margin-bottom: 1rem;
-        }
-
-        .section-desc {
-            font-size: 1.1rem;
-            color: var(--text-muted);
-        }
-
-        /* ── SCROLL-DRIVEN 2D CANVAS ZOOM SHOWCASE ── */
-        .canvas-zoom-container {
-            position: relative;
-            width: 100%;
-            min-height: 120vh;
-            padding: 4rem 2rem;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        .zoom-canvas-wrapper {
-            position: sticky;
-            top: 100px;
-            width: 100%;
-            max-width: 1100px;
-            height: 600px;
-            border-radius: 24px;
-            background: #080810;
-            border: 1px solid var(--border-accent);
-            box-shadow: 0 0 60px rgba(0, 240, 255, 0.15);
-            overflow: hidden;
-        }
-
-        #zoomCanvas {
-            width: 100%;
-            height: 100%;
-            display: block;
-        }
-
-        .canvas-hud-overlay {
-            position: absolute;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
+            bottom: 24px;
+            left: 24px;
+            right: 24px;
             background: rgba(10, 10, 18, 0.85);
-            border: 1px solid var(--border-glass);
-            padding: 10px 24px;
-            border-radius: 30px;
-            backdrop-filter: blur(15px);
+            border: 1px solid var(--border-glow);
+            border-radius: 16px;
+            padding: 16px 20px;
+            backdrop-filter: blur(20px);
             display: flex;
-            gap: 20px;
+            align-items: center;
+            gap: 16px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+        }
+
+        .spectrum-bars {
+            display: flex;
+            align-items: flex-end;
+            gap: 4px;
+            height: 28px;
+        }
+
+        .spectrum-bar {
+            width: 4px;
+            background: var(--cyan);
+            border-radius: 4px;
+            animation: wave 1.2s ease-in-out infinite alternate;
+        }
+
+        .spectrum-bar:nth-child(2) { animation-delay: -0.3s; height: 100%; background: var(--purple); }
+        .spectrum-bar:nth-child(3) { animation-delay: -0.6s; height: 70%; background: var(--pink); }
+        .spectrum-bar:nth-child(4) { animation-delay: -0.9s; height: 40%; }
+        .spectrum-bar:nth-child(5) { animation-delay: -0.2s; height: 85%; background: var(--cyan); }
+
+        @keyframes wave {
+            0% { height: 20%; }
+            100% { height: 100%; }
+        }
+
+        .spectrum-info {
             font-family: var(--font-mono);
-            font-size: 0.85rem;
-            color: var(--text-muted);
+            font-size: 0.8rem;
         }
 
-        .canvas-hud-overlay span {
-            color: var(--cyan);
-            font-weight: 600;
-        }
+        .spectrum-info .status { color: var(--green); font-weight: 700; }
+        .spectrum-info .sub { color: #8888a0; font-size: 0.75rem; }
 
-        /* ── FEATURES GRID ── */
-        .features-section {
-            padding: 8rem 2rem;
-            max-width: 1280px;
+        /* ── UNIQ BENTO GRID SECTION (CYBER-LUXE OBSIDIAN BENTO) ── */
+        .bento-section {
+            padding: 8rem 4rem;
+            max-width: 1400px;
             margin: 0 auto;
         }
 
-        .features-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 2rem;
+        .section-tag-mono {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--cyan);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 1rem;
+            display: block;
         }
 
-        .feature-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border-glass);
-            border-radius: 20px;
-            padding: 2.2rem;
-            transition: all 0.4s ease;
+        .section-head-title {
+            font-family: var(--font-display);
+            font-size: clamp(2.2rem, 5vw, 3.8rem);
+            font-weight: 900;
+            line-height: 1.1;
+            margin-bottom: 3.5rem;
+            text-transform: uppercase;
+        }
+
+        /* 12-COLUMN ASYMMETRICAL BENTO MESH */
+        .bento-grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 1.5rem;
+        }
+
+        .bento-cell {
+            background: var(--bg-glass);
+            border: 1px solid var(--border-dim);
+            border-radius: 24px;
+            padding: 2.5rem;
+            backdrop-filter: blur(20px);
             position: relative;
             overflow: hidden;
-            backdrop-filter: blur(10px);
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
-        .feature-card::before {
+        .bento-cell::before {
             content: '';
             position: absolute;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 3px;
+            right: 0;
+            height: 2px;
             background: linear-gradient(90deg, transparent, var(--cyan), transparent);
             opacity: 0;
             transition: opacity 0.4s ease;
         }
 
-        .feature-card:hover {
-            transform: translateY(-8px);
-            border-color: var(--border-accent);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
-            background: var(--bg-card-hover);
+        .bento-cell:hover {
+            border-color: var(--border-glow);
+            transform: translateY(-6px);
+            background: var(--bg-glass-hover);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
         }
 
-        .feature-card:hover::before {
-            opacity: 1;
-        }
+        .bento-cell:hover::before { opacity: 1; }
 
-        .feature-icon-wrapper {
-            width: 56px;
-            height: 56px;
+        /* Asymmetrical Spans */
+        .cell-span-8 { grid-column: span 8; }
+        .cell-span-4 { grid-column: span 4; }
+        .cell-span-6 { grid-column: span 6; }
+        .cell-span-12 { grid-column: span 12; }
+
+        .bento-icon-badge {
+            width: 52px;
+            height: 52px;
             border-radius: 14px;
+            background: rgba(0, 240, 255, 0.08);
+            border: 1px solid rgba(0, 240, 255, 0.2);
+            color: var(--cyan);
             display: flex;
             align-items: center;
             justify-content: center;
             margin-bottom: 1.5rem;
-            background: rgba(0, 240, 255, 0.08);
-            border: 1px solid rgba(0, 240, 255, 0.2);
-            color: var(--cyan);
         }
 
-        .feature-card h3 {
-            font-size: 1.35rem;
-            font-weight: 700;
-            margin-bottom: 0.75rem;
+        .bento-cell h3 {
+            font-family: var(--font-display);
+            font-size: 1.6rem;
+            font-weight: 800;
+            margin-bottom: 0.8rem;
+            text-transform: uppercase;
         }
 
-        .feature-card p {
-            color: var(--text-muted);
-            font-size: 0.98rem;
+        .bento-cell p {
+            color: #a0a0b8;
+            font-size: 1.02rem;
             line-height: 1.65;
         }
 
-        /* ── SCREENSHOT GALLERY & LIGHTBOX ── */
-        .showcase-section {
-            padding: 6rem 2rem 8rem;
-            max-width: 1300px;
+        .bento-art-preview {
+            margin-top: 1.5rem;
+            width: 100%;
+            height: 200px;
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid var(--border-dim);
+        }
+
+        .bento-art-preview img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* ── INTERACTIVE SCREENSHOT LIGHTBOX GALLERY ── */
+        .gallery-section {
+            padding: 6rem 4rem 8rem;
+            max-width: 1400px;
             margin: 0 auto;
         }
 
-        .gallery-tabs {
+        .gallery-filter-bar {
             display: flex;
-            justify-content: center;
             gap: 12px;
             flex-wrap: wrap;
             margin-bottom: 3rem;
         }
 
-        .tab-btn {
-            padding: 10px 22px;
+        .filter-btn {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            padding: 10px 24px;
             border-radius: 30px;
-            background: var(--bg-card);
-            border: 1px solid var(--border-glass);
-            color: var(--text-muted);
-            font-weight: 600;
-            font-size: 0.9rem;
+            background: var(--bg-glass);
+            border: 1px solid var(--border-dim);
+            color: #a0a0b8;
             cursor: pointer;
             transition: all 0.3s ease;
         }
 
-        .tab-btn.active, .tab-btn:hover {
-            background: rgba(0, 240, 255, 0.15);
+        .filter-btn.active, .filter-btn:hover {
             border-color: var(--cyan);
             color: var(--cyan);
-            box-shadow: 0 0 15px rgba(0, 240, 255, 0.2);
+            background: rgba(0, 240, 255, 0.12);
+            box-shadow: 0 0 20px rgba(0, 240, 255, 0.2);
         }
 
-        .gallery-grid {
+        .gallery-mesh {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
             gap: 2rem;
         }
 
-        .gallery-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border-glass);
-            border-radius: 18px;
+        .gallery-item-card {
+            background: var(--bg-glass);
+            border: 1px solid var(--border-dim);
+            border-radius: 20px;
             overflow: hidden;
             cursor: pointer;
             transition: all 0.4s ease;
         }
 
-        .gallery-card:hover {
-            transform: scale(1.03);
+        .gallery-item-card:hover {
+            transform: translateY(-8px) scale(1.02);
             border-color: var(--cyan);
-            box-shadow: 0 15px 35px rgba(0, 240, 255, 0.2);
+            box-shadow: 0 20px 45px rgba(0, 240, 255, 0.25);
         }
 
-        .gallery-card img {
+        .gallery-item-card img {
             width: 100%;
-            height: 240px;
+            height: 260px;
             object-fit: cover;
             display: block;
-            transition: transform 0.5s ease;
         }
 
-        .gallery-card:hover img {
-            transform: scale(1.05);
+        .gallery-item-body {
+            padding: 1.5rem;
+            background: rgba(8, 8, 14, 0.95);
+            border-top: 1px solid var(--border-dim);
         }
 
-        .gallery-card-info {
-            padding: 1.2rem;
-            background: rgba(10, 10, 18, 0.9);
-            border-top: 1px solid var(--border-glass);
-        }
-
-        .gallery-card-title {
-            font-weight: 700;
-            font-size: 1.1rem;
+        .gallery-item-body h4 {
+            font-family: var(--font-display);
+            font-size: 1.25rem;
+            font-weight: 800;
             color: #fff;
-            margin-bottom: 4px;
+            margin-bottom: 6px;
         }
 
-        .gallery-card-desc {
-            font-size: 0.85rem;
-            color: var(--text-muted);
+        .gallery-item-body p {
+            font-size: 0.88rem;
+            color: #a0a0b8;
         }
 
         /* ── LIGHTBOX MODAL ── */
         #lightboxModal {
             position: fixed;
             inset: 0;
-            background: rgba(3, 3, 6, 0.92);
-            backdrop-filter: blur(25px);
-            z-index: 99999;
+            background: rgba(2, 2, 5, 0.94);
+            backdrop-filter: blur(30px);
+            z-index: 999999;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -673,189 +651,185 @@
             padding: 2rem;
         }
 
-        #lightboxModal.open {
+        #lightboxModal.active {
             opacity: 1;
             pointer-events: auto;
         }
 
-        .lightbox-content {
+        .lightbox-box {
             position: relative;
-            max-width: 90vw;
-            max-height: 88vh;
-            border-radius: 16px;
-            border: 1px solid var(--border-accent);
-            box-shadow: 0 0 60px rgba(0, 240, 255, 0.3);
+            max-width: 92vw;
+            max-height: 90vh;
+            border-radius: 20px;
+            border: 1px solid var(--border-glow);
+            box-shadow: 0 0 80px rgba(0, 240, 255, 0.3);
             overflow: hidden;
         }
 
-        .lightbox-content img {
+        .lightbox-box img {
             max-width: 100%;
-            max-height: 85vh;
+            max-height: 86vh;
             display: block;
             object-fit: contain;
         }
 
-        .lightbox-close {
+        .lightbox-close-btn {
             position: absolute;
-            top: 20px;
-            right: 25px;
-            font-size: 2rem;
+            top: 25px;
+            right: 30px;
+            font-size: 2.2rem;
             color: #fff;
             cursor: pointer;
-            z-index: 100;
             transition: color 0.2s;
         }
 
-        .lightbox-close:hover { color: var(--cyan); }
+        .lightbox-close-btn:hover { color: var(--cyan); }
 
-        /* ── INTERACTIVE TERMINAL EMULATOR ── */
-        .terminal-section {
-            padding: 6rem 2rem;
-            max-width: 950px;
+        /* ── INTERACTIVE TERMINAL EXECUTOR ── */
+        .terminal-wrap {
+            padding: 6rem 4rem;
+            max-width: 1000px;
             margin: 0 auto;
         }
 
-        .terminal-box {
-            background: #080812;
-            border: 1px solid var(--border-accent);
-            border-radius: 20px;
+        .terminal-window {
+            background: #05050a;
+            border: 1px solid var(--border-glow);
+            border-radius: 24px;
             overflow: hidden;
-            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.7);
+            box-shadow: 0 30px 70px rgba(0, 0, 0, 0.8);
         }
 
-        .terminal-header {
-            background: #10101c;
-            padding: 14px 20px;
+        .term-topbar {
+            background: #0c0c16;
+            padding: 16px 24px;
             display: flex;
             align-items: center;
-            gap: 10px;
-            border-bottom: 1px solid var(--border-glass);
+            border-bottom: 1px solid var(--border-dim);
         }
 
-        .mac-dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-        }
+        .term-dots { display: flex; gap: 8px; }
+        .t-dot { width: 12px; height: 12px; border-radius: 50%; }
+        .t-red { background: #ef4444; }
+        .t-yellow { background: #f59e0b; }
+        .t-green { background: #10b981; }
 
-        .dot-red { background: #ef4444; }
-        .dot-yellow { background: #f59e0b; }
-        .dot-green { background: #10b981; }
-
-        .terminal-title {
-            margin-left: auto;
-            margin-right: auto;
+        .term-label {
+            margin: 0 auto;
             font-family: var(--font-mono);
             font-size: 0.85rem;
-            color: var(--text-muted);
+            color: #8888a0;
         }
 
-        .terminal-body {
-            padding: 2rem;
+        .term-screen {
+            padding: 2.2rem;
             font-family: var(--font-mono);
-            font-size: 0.92rem;
-            min-height: 320px;
-            max-height: 420px;
+            font-size: 0.95rem;
+            min-height: 340px;
+            max-height: 440px;
             overflow-y: auto;
-            line-height: 1.8;
+            line-height: 1.85;
         }
 
-        .term-user { color: var(--emerald); font-weight: 700; }
-        .term-ira { color: var(--cyan); font-weight: 700; }
-        .term-tool { color: var(--amber); }
-        .term-dim { color: var(--text-dim); }
+        .t-user { color: var(--green); font-weight: 700; }
+        .t-ira { color: var(--cyan); font-weight: 700; }
+        .t-tool { color: var(--amber); }
+        .t-dim { color: #6b7280; }
 
-        .terminal-presets {
-            padding: 1rem 2rem 1.5rem;
-            background: #0c0c18;
-            border-top: 1px solid var(--border-glass);
+        .term-actions-bar {
+            padding: 1.2rem 2.2rem;
+            background: #080810;
+            border-top: 1px solid var(--border-dim);
             display: flex;
-            gap: 10px;
+            gap: 12px;
             flex-wrap: wrap;
         }
 
-        .preset-btn {
+        .t-preset-btn {
             font-family: var(--font-mono);
-            font-size: 0.8rem;
-            padding: 6px 14px;
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid var(--border-glass);
-            color: var(--text-muted);
+            font-size: 0.82rem;
+            padding: 8px 16px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-dim);
+            color: #a0a0b8;
             cursor: pointer;
             transition: all 0.2s ease;
         }
 
-        .preset-btn:hover {
+        .t-preset-btn:hover {
             border-color: var(--cyan);
             color: var(--cyan);
             background: rgba(0, 240, 255, 0.1);
         }
 
-        /* ── CREATOR & FOOTPRINT SECTION ── */
-        .creator-section {
-            padding: 8rem 2rem;
-            max-width: 1200px;
+        /* ── CREATOR FOOTPRINT & PORTFOLIO LINKS ── */
+        .footprint-section {
+            padding: 8rem 4rem;
+            max-width: 1400px;
             margin: 0 auto;
         }
 
-        .creator-grid {
+        .footprint-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            grid-template-columns: repeat(3, 1fr);
             gap: 2rem;
         }
 
-        .creator-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border-glass);
-            border-radius: 20px;
-            padding: 2.5rem;
+        .footprint-card {
+            background: var(--bg-glass);
+            border: 1px solid var(--border-dim);
+            border-radius: 24px;
+            padding: 3rem 2.5rem;
             text-align: center;
-            backdrop-filter: blur(15px);
-            transition: transform 0.4s ease, border-color 0.4s ease;
+            backdrop-filter: blur(20px);
+            transition: all 0.4s ease;
         }
 
-        .creator-card:hover {
-            transform: translateY(-6px);
+        .footprint-card:hover {
+            transform: translateY(-8px);
             border-color: var(--cyan);
         }
 
-        .creator-avatar {
-            width: 80px;
-            height: 80px;
+        .footprint-avatar {
+            width: 84px;
+            height: 84px;
             border-radius: 50%;
             margin: 0 auto 1.5rem;
             border: 2px solid var(--cyan);
-            box-shadow: 0 0 20px rgba(0, 240, 255, 0.3);
+            box-shadow: 0 0 25px rgba(0, 240, 255, 0.35);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 2rem;
-            background: rgba(0, 240, 255, 0.1);
+            font-size: 2.2rem;
+            background: rgba(0, 240, 255, 0.08);
         }
 
-        .creator-card h3 {
-            font-size: 1.4rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
+        .footprint-card h3 {
+            font-family: var(--font-display);
+            font-size: 1.6rem;
+            font-weight: 800;
+            margin-bottom: 0.6rem;
+            text-transform: uppercase;
         }
 
-        .creator-card p {
-            color: var(--text-muted);
-            font-size: 0.95rem;
-            margin-bottom: 1.5rem;
+        .footprint-card p {
+            color: #a0a0b8;
+            font-size: 0.98rem;
+            margin-bottom: 2rem;
+            line-height: 1.6;
         }
 
         /* ── FOOTER ── */
         footer {
-            background: #030306;
-            border-top: 1px solid var(--border-glass);
-            padding: 4rem 2rem 2rem;
-            color: var(--text-muted);
+            background: #020205;
+            border-top: 1px solid var(--border-dim);
+            padding: 4rem;
+            color: #8888a0;
         }
 
-        .footer-container {
-            max-width: 1200px;
+        .footer-flex {
+            max-width: 1400px;
             margin: 0 auto;
             display: flex;
             justify-content: space-between;
@@ -865,77 +839,75 @@
             margin-bottom: 3rem;
         }
 
-        .footer-brand h4 {
-            font-size: 1.4rem;
-            color: #fff;
-            margin-bottom: 0.5rem;
-        }
-
-        .footer-links {
+        .footer-links-list {
             display: flex;
-            gap: 2rem;
+            gap: 2.5rem;
             list-style: none;
         }
 
-        .footer-links a {
-            color: var(--text-muted);
+        .footer-links-list a {
+            color: #a0a0b8;
             text-decoration: none;
             transition: color 0.3s;
         }
 
-        .footer-links a:hover { color: var(--cyan); }
+        .footer-links-list a:hover { color: var(--cyan); }
 
-        .footer-bottom {
+        .footer-copy {
             text-align: center;
-            font-size: 0.85rem;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 0.88rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.04);
             padding-top: 2rem;
         }
 
         /* Responsive */
-        @media (max-width: 900px) {
-            nav { padding: 1rem 1.5rem; }
-            .nav-links { display: none; }
-            .tech-stage { height: 360px; }
-            .main-avatar-frame { width: 90%; height: 300px; }
-            .float-element { display: none; }
-            .zoom-canvas-wrapper { height: 400px; }
+        @media (max-width: 1024px) {
+            .hero-section { grid-template-columns: 1fr; text-align: center; padding-top: 9rem; }
+            .hero-text-col { text-align: center; }
+            .hero-eyebrow { justify-content: center; }
+            .hero-actions { justify-content: center; }
+            .bento-grid { grid-template-columns: 1fr; }
+            .cell-span-8, .cell-span-4, .cell-span-6 { grid-column: span 12; }
+            .footprint-grid { grid-template-columns: 1fr; }
+            nav { padding: 1rem 2rem; }
+            .nav-items { display: none; }
         }
     </style>
 </head>
 <body>
 
+    <!-- CUSTOM CURSOR -->
+    <div id="cursor-dot"></div>
+    <div id="cursor-ring"></div>
+
     <!-- PRELOADER -->
     <div id="preloader">
-        <div class="loader-ring"></div>
-        <div class="loader-counter" id="loaderCounter">0%</div>
-        <div class="loader-logs" id="loaderLog">> INITIALIZING SYSTEM...</div>
+        <div class="loader-ring-outer"></div>
+        <div class="loader-val" id="loaderVal">0%</div>
+        <div class="loader-sub" id="loaderSub">> MOUNTING CYBER-LUXE OBSIDIAN...</div>
     </div>
 
-    <!-- CANVAS BACKGROUND -->
-    <canvas id="particleCanvas"></canvas>
+    <!-- AMBIENT GLOWS & GRID -->
+    <div class="cyber-grid"></div>
+    <div class="ambient-glow glow-1"></div>
+    <div class="ambient-glow glow-2"></div>
 
     <!-- NAVIGATION -->
     <nav id="navbar">
-        <a href="#" class="nav-logo">
-            <img src="logo.png" alt="IRA Logo" onerror="this.src='avatar.png'">
-            <span class="nav-brand">IRA <span class="version-tag">v0.5 Beta</span></span>
+        <a href="#" class="brand-logo">
+            <div class="brand-icon">I</div>
+            <span class="brand-name">IRA <span class="v-badge">v0.5 Beta</span></span>
         </a>
 
-        <ul class="nav-links">
-            <li><a href="#overview">Overview</a></li>
-            <li><a href="#interactive-zoom">2D Zoom</a></li>
-            <li><a href="#capabilities">Capabilities</a></li>
-            <li><a href="#showcase">Gallery</a></li>
-            <li><a href="#terminal">Terminal</a></li>
-            <li><a href="#creator">Creators</a></li>
+        <ul class="nav-items">
+            <li><a href="#hero">Overview</a></li>
+            <li><a href="#bento">Architecture</a></li>
+            <li><a href="#gallery">Interface Gallery</a></li>
+            <li><a href="#terminal">Live Execution</a></li>
+            <li><a href="#creators">Creators</a></li>
         </ul>
 
-        <div class="nav-actions">
-            <div class="status-badge">
-                <div class="status-dot"></div>
-                SYSTEM ONLINE
-            </div>
+        <div style="display:flex; align-items:center; gap:16px;">
             <a href="https://github.com/REvantsahu/ira-public-" target="_blank" class="btn btn-github">
                 <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
                 GitHub Repo
@@ -944,199 +916,167 @@
     </nav>
 
     <!-- HERO SECTION -->
-    <section class="hero" id="overview">
-        <div class="hero-pill">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="2.5"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-            Apple Keynote Grade Public Release v0.5
-        </div>
-
-        <h1>The AI That <span class="gradient-text">Sees Your Screen</span> & <span class="gradient-text-2">Controls Your PC</span></h1>
-        
-        <p>
-            IRA (Intelligent Responsive Assistant) is your warm, cheerful desktop companion. 
-            Powered by Gemini 3.5 Flash & Gemini Live API, she executes complex OS tasks, manages files, runs browser automation, and remembers everything.
-        </p>
-
-        <div class="hero-ctas">
-            <a href="https://github.com/REvantsahu/ira-public-" target="_blank" class="btn btn-primary">
-                <span>Explore GitHub Repository</span>
-                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-            </a>
-            <a href="https://revants.netlify.app" target="_blank" class="btn btn-secondary">
-                <span>Revant's Portfolio</span>
-            </a>
-        </div>
-
-        <!-- 3D FLOATING TECH STAGE -->
-        <div class="tech-stage">
+    <section class="hero-section" id="hero">
+        <div class="hero-text-col">
+            <div class="hero-eyebrow">Stitch MCP Design System Certified</div>
             
-            <!-- Floating SVG 1: Laptop -->
-            <div class="float-element float-laptop">
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="1.8"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="2" y1="20" x2="22" y2="20"/></svg>
-                <div style="font-size:0.75rem; font-family:var(--font-mono); color:var(--cyan); margin-top:4px;">Desktop Control</div>
-            </div>
+            <h1 class="hero-title">
+                The AI That <span class="text-cyan">Sees</span> & <span class="text-purple">Controls</span> Your PC
+            </h1>
 
-            <!-- Main Holographic Avatar Frame -->
-            <div class="main-avatar-frame" id="heroFrame">
+            <p class="hero-desc">
+                IRA is an autonomous desktop AI agent running locally on your computer. 
+                Powered by Gemini 3.5 Flash & Gemini Live API, she reads your screen in real-time, executes complex keyboard & mouse actions, automates browser DOM, and remembers your workflow.
+            </p>
+
+            <div class="hero-actions">
+                <a href="https://github.com/REvantsahu/ira-public-" target="_blank" class="btn btn-op-primary">
+                    <span>Explore GitHub Repository</span>
+                    <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                </a>
+                <a href="https://revants.netlify.app" target="_blank" class="btn btn-op-glass">
+                    <span>Revant's Portfolio ↗</span>
+                </a>
+            </div>
+        </div>
+
+        <div class="hero-art-col">
+            <div class="hero-art-card">
                 <img src="ira.png" alt="IRA Holographic Assistant Interface" onerror="this.src='avatar.png'">
-            </div>
 
-            <!-- Floating SVG 2: Mobile -->
-            <div class="float-element float-mobile">
-                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="1.8"><rect x="5" y="2" width="14" height="20" rx="3"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-                <div style="font-size:0.75rem; font-family:var(--font-mono); color:var(--purple); margin-top:4px;">Gemini Live API</div>
-            </div>
-
-            <!-- Floating SVG 3: Vision HUD -->
-            <div class="float-element float-hud-ring">
-                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--pink)" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg>
-                <div style="font-size:0.75rem; font-family:var(--font-mono); color:var(--pink); margin-top:4px;">Screen Vision</div>
+                <!-- Floating Voice Audio Spectrum Widget -->
+                <div class="voice-spectrum-widget">
+                    <div class="spectrum-bars">
+                        <div class="spectrum-bar"></div>
+                        <div class="spectrum-bar"></div>
+                        <div class="spectrum-bar"></div>
+                        <div class="spectrum-bar"></div>
+                        <div class="spectrum-bar"></div>
+                    </div>
+                    <div class="spectrum-info">
+                        <div class="status">● GEMINI LIVE AUDIO ONLINE</div>
+                        <div class="sub">sub-200ms latency | Hinglish native</div>
+                    </div>
+                </div>
             </div>
         </div>
     </section>
 
-    <!-- SCROLL-DRIVEN 2D CANVAS ZOOM SECTION -->
-    <div class="canvas-zoom-container" id="interactive-zoom">
-        <div class="section-header">
-            <span class="section-tag">✦ Interactive Canvas Engine</span>
-            <h2 class="section-title">Explore IRA's Interface In Micro Detail</h2>
-            <p class="section-desc">Scroll down through this section to dynamically zoom into IRA's real-time interface, vision tools, and memory graph.</p>
-        </div>
+    <!-- UNIQ BENTO GRID SECTION -->
+    <section class="bento-section" id="bento">
+        <span class="section-tag-mono">// ARCHITECTURE & SUPERPOWERS</span>
+        <h2 class="section-head-title">Asymmetrical Bento Engine</h2>
 
-        <div class="zoom-canvas-wrapper">
-            <canvas id="zoomCanvas"></canvas>
-            <div class="canvas-hud-overlay">
-                <div>MODE: <span id="hudZoomMode">FULL VIEW</span></div>
-                <div>ZOOM MAGNIFICATION: <span id="hudZoomLevel">1.0x</span></div>
-                <div>TARGET: <span id="hudZoomTarget">OVERVIEW</span></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- CAPABILITIES & FEATURES SECTION -->
-    <section class="features-section" id="capabilities">
-        <div class="section-header">
-            <span class="section-tag">◈ Superpowers</span>
-            <h2 class="section-title">88+ Built-in Tools & Vision Systems</h2>
-            <p class="section-desc">From native Python OS controls to multi-key Gemini vision and browser automation, IRA handles it all.</p>
-        </div>
-
-        <div class="features-grid">
-            <div class="feature-card">
-                <div class="feature-icon-wrapper">
+        <div class="bento-grid">
+            
+            <!-- Cell 1: Screen Vision (Span 8) -->
+            <div class="bento-cell cell-span-8">
+                <div class="bento-icon-badge">
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                 </div>
-                <h3>Real-Time Screen Vision</h3>
-                <p>IRA takes silent verification screenshots with MSS and Pillow. She reads buttons, recognizes UI coordinates, and navigates desktop software with human precision.</p>
-            </div>
-
-            <div class="feature-card">
-                <div class="feature-icon-wrapper" style="color:var(--purple); background:rgba(139,92,246,0.1); border-color:rgba(139,92,246,0.2);">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                <h3>Computational Screen Vision</h3>
+                <p>IRA takes verification screenshots using MSS and Pillow. She reads buttons, recognizes UI coordinates, and navigates desktop apps with human precision.</p>
+                <div class="bento-art-preview">
+                    <img src="screen read.png" alt="Screen Read Screenshot" onerror="this.src='ira.png'">
                 </div>
-                <h3>Native PC Control</h3>
-                <p>Direct mouse clicks, key combinations, app launching, process management, and volume controls via PyAutoGUI and psutil.</p>
             </div>
 
-            <div class="feature-card">
-                <div class="feature-icon-wrapper" style="color:var(--pink); background:rgba(236,72,153,0.1); border-color:rgba(236,72,153,0.2);">
+            <!-- Cell 2: Gemini Live Voice (Span 4) -->
+            <div class="bento-cell cell-span-4">
+                <div class="bento-icon-badge" style="color:var(--purple); background:rgba(139,92,246,0.1); border-color:rgba(139,92,246,0.2);">
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
                 </div>
-                <h3>Gemini Live Voice Engine</h3>
-                <p>Sub-200ms real-time voice conversations using `gemini-3.1-flash-live-preview`. Speaks Hinglish naturally with full audio barge-in support.</p>
+                <h3>Gemini Live Audio</h3>
+                <p>Sub-200ms real-time audio WebSocket via `gemini-3.1-flash-live-preview`. Full audio barge-in support.</p>
+                <div class="bento-art-preview" style="height:140px;">
+                    <img src="avatar.png" alt="AI Avatar render">
+                </div>
             </div>
 
-            <div class="feature-card">
-                <div class="feature-icon-wrapper" style="color:var(--emerald); background:rgba(16,185,129,0.1); border-color:rgba(16,185,129,0.2);">
+            <!-- Cell 3: Persistent Memory (Span 4) -->
+            <div class="bento-cell cell-span-4">
+                <div class="bento-icon-badge" style="color:var(--emerald); background:rgba(16,185,129,0.1); border-color:rgba(16,185,129,0.2);">
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
                 </div>
-                <h3>Persistent Memory System</h3>
-                <p>Saves preferences, past conversation context, and user knowledge across restarts. Structured JSON graph queryable by IRA.</p>
+                <h3>Persistent Memory Graph</h3>
+                <p>Structured JSON memory saving preferences, active tasks, and context across sessions.</p>
             </div>
 
-            <div class="feature-card">
-                <div class="feature-icon-wrapper" style="color:var(--amber); background:rgba(245,158,11,0.1); border-color:rgba(245,158,11,0.2);">
+            <!-- Cell 4: WhatsApp & DOM Web Automation (Span 8) -->
+            <div class="bento-cell cell-span-8">
+                <div class="bento-icon-badge" style="color:var(--amber); background:rgba(245,158,11,0.1); border-color:rgba(245,158,11,0.2);">
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
                 </div>
-                <h3>Automated WhatsApp & DOM Web</h3>
-                <p>DOM-level browser automation. IRA opens WhatsApp Web, finds contacts, formats text, and sends messages automatically.</p>
+                <h3>DOM Web & WhatsApp Automation</h3>
+                <p>Automates browser DOM actions, extracts live web data, and sends WhatsApp messages programmatically.</p>
+                <div class="bento-art-preview">
+                    <img src="brower controll.png" alt="Browser Control Screenshot" onerror="this.src='dashboard.png'">
+                </div>
             </div>
 
-            <div class="feature-card">
-                <div class="feature-icon-wrapper" style="color:var(--cyan); background:rgba(0,240,255,0.1); border-color:rgba(0,240,255,0.2);">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-                </div>
-                <h3>Multi-Key Rotation Engine</h3>
-                <p>8-Key Gemini rotation pool + 5-Key Sarvam TTS pool ensuring high throughput with zero rate-limit downtime.</p>
-            </div>
         </div>
     </section>
 
-    <!-- SCREENSHOT GALLERY SHOWCASE & LIGHTBOX -->
-    <section class="showcase-section" id="showcase">
-        <div class="section-header">
-            <span class="section-tag">♡ Real Product Showcase</span>
-            <h2 class="section-title">Actual UI Screenshots & Features</h2>
-            <p class="section-desc">Click any image to inspect IRA's transparent overlay, floating cards, settings menu, and gesture camera in full resolution.</p>
+    <!-- INTERACTIVE SCREENSHOT GALLERY -->
+    <section class="gallery-section" id="gallery">
+        <span class="section-tag-mono">// REAL PRODUCT EVIDENCE</span>
+        <h2 class="section-head-title">Interface Screenshots</h2>
+
+        <div class="gallery-filter-bar">
+            <button class="filter-btn active" onclick="filterGrid('all')">All Images</button>
+            <button class="filter-btn" onclick="filterGrid('hud')">Hologram HUD</button>
+            <button class="filter-btn" onclick="filterGrid('dashboard')">Analytics & Memory</button>
+            <button class="filter-btn" onclick="filterGrid('tools')">Hardware & Gesture</button>
+            <button class="filter-btn" onclick="filterGrid('settings')">Settings & Themes</button>
         </div>
 
-        <!-- Filter Tabs -->
-        <div class="gallery-tabs">
-            <button class="tab-btn active" onclick="filterGallery('all')">All Images</button>
-            <button class="tab-btn" onclick="filterGallery('hud')">Hologram HUD</button>
-            <button class="tab-btn" onclick="filterGallery('dashboard')">Analytics & Memory</button>
-            <button class="tab-btn" onclick="filterGallery('tools')">Hardware Tools</button>
-            <button class="tab-btn" onclick="filterGallery('settings')">Settings & Themes</button>
-        </div>
-
-        <!-- Gallery Grid -->
-        <div class="gallery-grid" id="galleryGrid">
+        <div class="gallery-mesh" id="galleryMesh">
             
-            <div class="gallery-card" data-cat="hud" onclick="openLightbox('ira.png')">
-                <img src="ira.png" alt="IRA Main Hologram HUD" onerror="this.src='avatar.png'">
-                <div class="gallery-card-info">
-                    <div class="gallery-card-title">Holographic Desktop HUD</div>
-                    <div class="gallery-card-desc">Floating PySide6 QML transparent overlay with Live Voice & active logs.</div>
+            <div class="gallery-item-card" data-cat="hud" onclick="popModal('ira.png')">
+                <img src="ira.png" alt="IRA Hologram HUD" onerror="this.src='avatar.png'">
+                <div class="gallery-item-body">
+                    <h4>Holographic Desktop HUD</h4>
+                    <p>PySide6 QML transparent overlay with Live Voice & active logs.</p>
                 </div>
             </div>
 
-            <div class="gallery-card" data-cat="dashboard" onclick="openLightbox('dashboard.png')">
+            <div class="gallery-item-card" data-cat="dashboard" onclick="popModal('dashboard.png')">
                 <img src="dashboard.png" alt="Gold Market & Memory Dashboard" onerror="this.src='laptop.png'">
-                <div class="gallery-card-info">
-                    <div class="gallery-card-title">Gold Market Insights & Workspace</div>
-                    <div class="gallery-card-desc">Dynamic chart generation, live node visualizer, and memory panel.</div>
+                <div class="gallery-item-body">
+                    <h4>Market Insights & Workspace</h4>
+                    <p>Dynamic chart generation, live node visualizer, and memory graph.</p>
                 </div>
             </div>
 
-            <div class="gallery-card" data-cat="tools" onclick="openLightbox('about.png')">
+            <div class="gallery-item-card" data-cat="tools" onclick="popModal('about.png')">
                 <img src="about.png" alt="Hardware & System Tools" onerror="this.src='core.png'">
-                <div class="gallery-card-info">
-                    <div class="gallery-card-title">Core System & Hardware Tools</div>
-                    <div class="gallery-card-desc">Hardware controls, Arduino servo motor API, and sensor integration.</div>
+                <div class="gallery-item-body">
+                    <h4>System Architecture & Hardware</h4>
+                    <p>Hardware controls, Arduino servo motor API, and psutil stats.</p>
                 </div>
             </div>
 
-            <div class="gallery-card" data-cat="hud" onclick="openLightbox('colashped.png')">
+            <div class="gallery-item-card" data-cat="hud" onclick="popModal('colashped.png')">
                 <img src="colashped.png" alt="Minimal Collapsed Pill Dock" onerror="this.src='ira.png'">
-                <div class="gallery-card-info">
-                    <div class="gallery-card-title">Minimal Floating Pill Dock</div>
-                    <div class="gallery-card-desc">Compact collapsed dock mode with quick microphone and text input.</div>
+                <div class="gallery-item-body">
+                    <h4>Floating Pill Dock</h4>
+                    <p>Compact dock mode with microphone toggle & text input field.</p>
                 </div>
             </div>
 
-            <div class="gallery-card" data-cat="settings" onclick="openLightbox('settings.png')">
+            <div class="gallery-item-card" data-cat="settings" onclick="popModal('settings.png')">
                 <img src="settings.png" alt="Settings & Multi-Theme Selector" onerror="this.src='avatar.png'">
-                <div class="gallery-card-info">
-                    <div class="gallery-card-title">Settings & Theme Selector</div>
-                    <div class="gallery-card-desc">Hologram theme presets, auto-screenshot toggle, and gesture camera settings.</div>
+                <div class="gallery-item-body">
+                    <h4>Settings & Theme Selector</h4>
+                    <p>Multi-theme presets, auto-screenshot toggle, and key status.</p>
                 </div>
             </div>
 
-            <div class="gallery-card" data-cat="tools" onclick="openLightbox('gesture controll.png')">
+            <div class="gallery-item-card" data-cat="tools" onclick="popModal('gesture controll.png')">
                 <img src="gesture controll.png" alt="Camera Vision & Gesture Control" onerror="this.src='core.png'">
-                <div class="gallery-card-info">
-                    <div class="gallery-card-title">Gesture Control Engine</div>
-                    <div class="gallery-card-desc">OpenCV camera feed for hand gestures and face tracking.</div>
+                <div class="gallery-item-body">
+                    <h4>Gesture Control Engine</h4>
+                    <p>OpenCV camera feed tracking hands and face gestures.</p>
                 </div>
             </div>
 
@@ -1144,262 +1084,143 @@
     </section>
 
     <!-- LIGHTBOX MODAL -->
-    <div id="lightboxModal" onclick="closeLightbox()">
-        <span class="lightbox-close">&times;</span>
-        <div class="lightbox-content" onclick="event.stopPropagation()">
-            <img id="lightboxImg" src="" alt="Full Screen Screenshot">
+    <div id="lightboxModal" onclick="closeModal()">
+        <span class="lightbox-close-btn">&times;</span>
+        <div class="lightbox-box" onclick="event.stopPropagation()">
+            <img id="modalImg" src="" alt="Full Screen Screenshot">
         </div>
     </div>
 
-    <!-- INTERACTIVE TERMINAL EMULATOR -->
-    <section class="terminal-section" id="terminal">
-        <div class="section-header">
-            <span class="section-tag">⚡ Live Execution</span>
-            <h2 class="section-title">Interactive Terminal Demo</h2>
-            <p class="section-desc">Click preset prompts below to watch IRA perform step-by-step tool calls in Hinglish.</p>
-        </div>
+    <!-- INTERACTIVE TERMINAL EXECUTOR -->
+    <section class="terminal-wrap" id="terminal">
+        <span class="section-tag-mono">// LIVE COMMAND EXECUTION</span>
+        <h2 class="section-head-title">Interactive Terminal</h2>
 
-        <div class="terminal-box">
-            <div class="terminal-header">
-                <div class="mac-dot dot-red"></div>
-                <div class="mac-dot dot-yellow"></div>
-                <div class="mac-dot dot-green"></div>
-                <div class="terminal-title">IRA — Executable Terminal</div>
+        <div class="terminal-window">
+            <div class="term-topbar">
+                <div class="term-dots">
+                    <div class="t-dot t-red"></div>
+                    <div class="t-dot t-yellow"></div>
+                    <div class="t-dot t-green"></div>
+                </div>
+                <div class="term-label">IRA — Execution Console</div>
             </div>
 
-            <div class="terminal-body" id="termBody">
-                <div class="term-dim">System initialized. Click a preset command below...</div>
+            <div class="term-screen" id="termScreen">
+                <div class="t-dim">System initialized. Click a preset command below...</div>
             </div>
 
-            <div class="terminal-presets">
-                <button class="preset-btn" onclick="runPreset(1)">▶ Play YouTube Music</button>
-                <button class="preset-btn" onclick="runPreset(2)">▶ Check Gold Price Chart</button>
-                <button class="preset-btn" onclick="runPreset(3)">▶ Send WhatsApp Message</button>
+            <div class="term-actions-bar">
+                <button class="t-preset-btn" onclick="execPreset(1)">▶ Play YouTube Music</button>
+                <button class="t-preset-btn" onclick="execPreset(2)">▶ Check Gold Price Chart</button>
+                <button class="t-preset-btn" onclick="execPreset(3)">▶ Send WhatsApp Message</button>
             </div>
         </div>
     </section>
 
-    <!-- CREATOR & NAGCHETRA LABS FOOTPRINT -->
-    <section class="creator-section" id="creator">
-        <div class="section-header">
-            <span class="section-tag">✦ Built With Passion</span>
-            <h2 class="section-title">Creators & Innovation Labs</h2>
-            <p class="section-desc">Designed and engineered by Revant Sahu at Nagchetra Labs.</p>
-        </div>
+    <!-- CREATOR FOOTPRINT & PORTFOLIO LINKS -->
+    <section class="footprint-section" id="creators">
+        <span class="section-tag-mono">// CREATOR & INNOVATION LABS</span>
+        <h2 class="section-head-title">Official Links</h2>
 
-        <div class="creator-grid">
-            <div class="creator-card">
-                <div class="creator-avatar">👨‍💻</div>
+        <div class="footprint-grid">
+            
+            <div class="footprint-card">
+                <div class="footprint-avatar">👨‍💻</div>
                 <h3>Revant Sahu</h3>
-                <p>Creator & Lead AI Engineer building next-gen autonomous desktop agents and multimodal assistants.</p>
-                <a href="https://revants.netlify.app" target="_blank" class="btn btn-primary" style="padding:10px 20px; font-size:0.88rem;">Visit Portfolio ↗</a>
+                <p>Creator & Lead AI Engineer building autonomous PC agents and multimodal AI assistants.</p>
+                <a href="https://revants.netlify.app" target="_blank" class="btn btn-op-primary" style="padding:10px 24px; font-size:0.88rem;">Visit Portfolio ↗</a>
             </div>
 
-            <div class="creator-card">
-                <div class="creator-avatar" style="border-color:var(--purple); color:var(--purple);">🔬</div>
+            <div class="footprint-card">
+                <div class="footprint-avatar" style="border-color:var(--purple); color:var(--purple);">🔬</div>
                 <h3>Nagchetra Labs</h3>
                 <p>Research & development lab specializing in vision models, computer use APIs, and real-time audio systems.</p>
-                <a href="https://nagchetra.netlify.app" target="_blank" class="btn btn-secondary" style="padding:10px 20px; font-size:0.88rem;">Explore Nagchetra ↗</a>
+                <a href="https://nagchetra.netlify.app" target="_blank" class="btn btn-op-glass" style="padding:10px 24px; font-size:0.88rem;">Explore Nagchetra ↗</a>
             </div>
 
-            <div class="creator-card">
-                <div class="creator-avatar" style="border-color:var(--emerald); color:var(--emerald);">🌐</div>
-                <h3>Public GitHub Repo</h3>
-                <p>Explore the complete open-source codebase, installation script, documentation, and MIT license.</p>
-                <a href="https://github.com/REvantsahu/ira-public-" target="_blank" class="btn btn-github" style="padding:10px 20px; font-size:0.88rem;">Open GitHub Repo ↗</a>
+            <div class="footprint-card">
+                <div class="footprint-avatar" style="border-color:var(--green); color:var(--green);">🌐</div>
+                <h3>GitHub Repository</h3>
+                <p>Explore the complete open-source codebase, setup script, documentation, and MIT license.</p>
+                <a href="https://github.com/REvantsahu/ira-public-" target="_blank" class="btn btn-github" style="padding:10px 24px; font-size:0.88rem;">Open GitHub Repo ↗</a>
             </div>
+
         </div>
     </section>
 
     <!-- FOOTER -->
     <footer>
-        <div class="footer-container">
-            <div class="footer-brand">
-                <h4>IRA v0.5 Beta</h4>
-                <p style="font-size:0.9rem;">Intelligent Responsive Assistant by Revant Sahu</p>
+        <div class="footer-flex">
+            <div>
+                <h4 style="font-family:var(--font-display); font-size:1.4rem; color:#fff; text-transform:uppercase;">IRA v0.5 Beta</h4>
+                <p style="font-size:0.9rem; margin-top:4px;">Engineered by Revant Sahu @ Nagchetra Labs</p>
             </div>
 
-            <ul class="footer-links">
-                <li><a href="https://github.com/REvantsahu/ira-public-" target="_blank">GitHub Repository</a></li>
-                <li><a href="https://revants.netlify.app" target="_blank">Revant Sahu Portfolio</a></li>
+            <ul class="footer-links-list">
+                <li><a href="https://github.com/REvantsahu/ira-public-" target="_blank">GitHub Repo</a></li>
+                <li><a href="https://revants.netlify.app" target="_blank">Revant's Portfolio</a></li>
                 <li><a href="https://nagchetra.netlify.app" target="_blank">Nagchetra Labs</a></li>
             </ul>
         </div>
 
-        <div class="footer-bottom">
+        <div class="footer-copy">
             &copy; 2026 Revant (rebantsahu) & Nagchetra Labs. Released under MIT License.
         </div>
     </footer>
 
     <!-- SCRIPTS -->
     <script>
-        // ── PRELOADER COUNTER & LOGS ──
+        // ── CUSTOM CURSOR FOLLOWER ──
+        const dot = document.getElementById('cursor-dot');
+        const ring = document.getElementById('cursor-ring');
+
+        window.addEventListener('mousemove', (e) => {
+            dot.style.left = e.clientX + 'px';
+            dot.style.top = e.clientY + 'px';
+            ring.style.left = e.clientX + 'px';
+            ring.style.top = e.clientY + 'px';
+        });
+
+        // ── PRELOADER ──
+        let pct = 0;
+        const valEl = document.getElementById('loaderVal');
+        const subEl = document.getElementById('loaderSub');
         const logs = [
-            "> INITIALIZING IRA SYSTEM CORE...",
-            "> LOADING GEMINI 3.5 FLASH REASONING ENGINE...",
-            "> CONNECTING GEMINI LIVE WEBSOCKET (SUB-200MS)...",
-            "> MOUNTING MSS SCREEN VISION & COMPUTATIONAL OCR...",
-            "> INITIALIZING DOM BROWSER AUTOMATION & WHATSAPP BRIDGE...",
-            "> SYSTEM READY."
+            "> INITIALIZING STITCH MCP CYBER-LUXE OBSIDIAN...",
+            "> MOUNTING SYNE DISPLAY TYPOGRAPHY & SPACE GROTESK...",
+            "> CONNECTING GEMINI 3.5 FLASH REASONING ENGINE...",
+            "> ACTIVATING GEMINI LIVE AUDIO WEBSOCKET...",
+            "> MOUNTING SCREEN VISION & DOM WHATSAPP BRIDGE...",
+            "> SYSTEM ONLINE."
         ];
 
-        let progress = 0;
-        const counter = document.getElementById('loaderCounter');
-        const logEl = document.getElementById('loaderLog');
-
-        const loadInterval = setInterval(() => {
-            progress += Math.floor(Math.random() * 8) + 4;
-            if (progress >= 100) {
-                progress = 100;
-                clearInterval(loadInterval);
+        const timer = setInterval(() => {
+            pct += Math.floor(Math.random() * 10) + 4;
+            if (pct >= 100) {
+                pct = 100;
+                clearInterval(timer);
                 setTimeout(() => {
                     document.getElementById('preloader').classList.add('fade-out');
                 }, 500);
             }
-            counter.textContent = progress + '%';
-            const logIdx = Math.min(Math.floor((progress / 100) * logs.length), logs.length - 1);
-            logEl.textContent = logs[logIdx];
-        }, 120);
+            valEl.textContent = pct + '%';
+            const idx = Math.min(Math.floor((pct / 100) * logs.length), logs.length - 1);
+            subEl.textContent = logs[idx];
+        }, 110);
 
-        // ── PARTICLE CANVAS ──
-        const pCanvas = document.getElementById('particleCanvas');
-        const pCtx = pCanvas.getContext('2d');
-        let particles = [];
-
-        function resizePCanvas() {
-            pCanvas.width = window.innerWidth;
-            pCanvas.height = window.innerHeight;
-        }
-        window.addEventListener('resize', resizePCanvas);
-        resizePCanvas();
-
-        class Particle {
-            constructor() {
-                this.x = Math.random() * pCanvas.width;
-                this.y = Math.random() * pCanvas.height;
-                this.vx = (Math.random() - 0.5) * 0.6;
-                this.vy = (Math.random() - 0.5) * 0.6;
-                this.radius = Math.random() * 2 + 1;
-                this.alpha = Math.random() * 0.5 + 0.2;
-            }
-            update() {
-                this.x += this.vx;
-                this.y += this.vy;
-                if (this.x < 0 || this.x > pCanvas.width) this.vx *= -1;
-                if (this.y < 0 || this.y > pCanvas.height) this.vy *= -1;
-            }
-            draw() {
-                pCtx.beginPath();
-                pCtx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-                pCtx.fillStyle = `rgba(0, 240, 255, ${this.alpha})`;
-                pCtx.shadowBlur = 10;
-                pCtx.shadowColor = '#00f0ff';
-                pCtx.fill();
-            }
-        }
-
-        for (let i = 0; i < 60; i++) particles.push(new Particle());
-
-        function animateParticles() {
-            pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
-            for (let i = 0; i < particles.length; i++) {
-                particles[i].update();
-                particles[i].draw();
-                for (let j = i + 1; j < particles.length; j++) {
-                    const dx = particles[i].x - particles[j].x;
-                    const dy = particles[i].y - particles[j].y;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    if (dist < 120) {
-                        pCtx.beginPath();
-                        pCtx.moveTo(particles[i].x, particles[i].y);
-                        pCtx.lineTo(particles[j].x, particles[j].y);
-                        pCtx.strokeStyle = `rgba(0, 240, 255, ${0.15 * (1 - dist / 120)})`;
-                        pCtx.lineWidth = 0.8;
-                        pCtx.stroke();
-                    }
-                }
-            }
-            requestAnimationFrame(animateParticles);
-        }
-        animateParticles();
-
-        // ── SCROLL-DRIVEN 2D CANVAS ZOOM ──
-        const zCanvas = document.getElementById('zoomCanvas');
-        const zCtx = zCanvas.getContext('2d');
-        const zoomImg = new Image();
-        zoomImg.src = 'ira.png';
-
-        function resizeZCanvas() {
-            zCanvas.width = zCanvas.parentElement.clientWidth;
-            zCanvas.height = zCanvas.parentElement.clientHeight;
-            drawZoomCanvas();
-        }
-        window.addEventListener('resize', resizeZCanvas);
-        zoomImg.onload = () => resizeZCanvas();
-
-        let scrollProgress = 0;
+        // ── NAVBAR SCROLL ──
         window.addEventListener('scroll', () => {
-            const container = document.getElementById('interactive-zoom');
-            const rect = container.getBoundingClientRect();
-            const total = container.offsetHeight - window.innerHeight;
-            scrollProgress = Math.max(0, Math.min(1, -rect.top / total));
-            drawZoomCanvas();
-
-            // Navbar shadow toggle
             const nav = document.getElementById('navbar');
-            nav.classList.toggle('scrolled', window.scrollY > 50);
+            nav.classList.toggle('scrolled', window.scrollY > 60);
         });
 
-        function drawZoomCanvas() {
-            if (!zCanvas.width || !zCanvas.height) return;
-            zCtx.clearRect(0, 0, zCanvas.width, zCanvas.height);
-
-            if (!zoomImg.complete || zoomImg.naturalWidth === 0) {
-                zCtx.fillStyle = '#0a0a14';
-                zCtx.fillRect(0, 0, zCanvas.width, zCanvas.height);
-                zCtx.fillStyle = '#00f0ff';
-                zCtx.font = '16px monospace';
-                zCtx.fillText('Loading Holographic Interface...', 40, 40);
-                return;
-            }
-
-            // Calculate zoom scale based on scroll
-            const scale = 1 + scrollProgress * 1.5;
-            const focusX = zCanvas.width * (0.5 - scrollProgress * 0.2);
-            const focusY = zCanvas.height * (0.5 - scrollProgress * 0.1);
-
-            zCtx.save();
-            zCtx.translate(focusX, focusY);
-            zCtx.scale(scale, scale);
-            zCtx.translate(-zCanvas.width / 2, -zCanvas.height / 2);
-
-            zCtx.drawImage(zoomImg, 0, 0, zCanvas.width, zCanvas.height);
-            zCtx.restore();
-
-            // HUD overlay updates
-            const modeEl = document.getElementById('hudZoomMode');
-            const levelEl = document.getElementById('hudZoomLevel');
-            const targetEl = document.getElementById('hudZoomTarget');
-
-            levelEl.textContent = scale.toFixed(2) + 'x';
-            if (scrollProgress < 0.3) {
-                modeEl.textContent = 'FULL OVERVIEW';
-                targetEl.textContent = 'MAIN HUD';
-            } else if (scrollProgress < 0.7) {
-                modeEl.textContent = 'SCREEN VISION MAGNIFICATION';
-                targetEl.textContent = 'FLOATING PILL DOCK';
-            } else {
-                modeEl.textContent = 'LIVE AUDIO SPECTRUM';
-                targetEl.textContent = 'VOICE WEBSOCKET LOGS';
-            }
-        }
-
-        // ── GALLERY TAB FILTERING ──
-        function filterGallery(cat) {
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        // ── GALLERY FILTER ──
+        function filterGrid(cat) {
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
             event.target.classList.add('active');
 
-            document.querySelectorAll('.gallery-card').forEach(card => {
+            document.querySelectorAll('.gallery-item-card').forEach(card => {
                 if (cat === 'all' || card.dataset.cat === cat) {
                     card.style.display = 'block';
                 } else {
@@ -1408,57 +1229,55 @@
             });
         }
 
-        // ── LIGHTBOX MODAL ──
-        function openLightbox(imgSrc) {
-            const modal = document.getElementById('lightboxModal');
-            const img = document.getElementById('lightboxImg');
-            img.src = imgSrc;
-            modal.classList.add('open');
+        // ── LIGHTBOX ──
+        function popModal(src) {
+            document.getElementById('modalImg').src = src;
+            document.getElementById('lightboxModal').classList.add('active');
         }
 
-        function closeLightbox() {
-            document.getElementById('lightboxModal').classList.remove('open');
+        function closeModal() {
+            document.getElementById('lightboxModal').classList.remove('active');
         }
 
-        // ── INTERACTIVE TERMINAL PRESETS ──
-        const presets = {
+        // ── TERMINAL EXECUTOR ──
+        const scripts = {
             1: [
-                '<span class="term-user">You ></span> open YouTube and play KGF songs',
-                '<span class="term-dim">  ◎ 👁 Reading screen coordinates with MSS vision...</span>',
-                '<span class="term-dim">  ◎ 🧠 Gemini 3.5 Flash reasoning...</span>',
-                '<span class="term-tool">  [TOOL] browser_control(action="navigate", url="youtube.com")</span>',
-                '<span class="term-ira">  ✓ Navigated to YouTube successfully</span>',
-                '<span class="term-tool">  [TOOL] browser_control(action="type", text="KGF songs", press_enter=True)</span>',
-                '<span class="term-ira">  ✓ Playing KGF Songs video</span>',
-                '<span class="term-ira">IRA > Haan ji! KGF ke gaane chal rahe hain! 🎵</span>'
+                '<span class="t-user">You ></span> open YouTube and play KGF songs',
+                '<span class="t-dim">  ◎ 👁 Reading screen coordinates with MSS vision...</span>',
+                '<span class="t-dim">  ◎ 🧠 Gemini 3.5 Flash reasoning...</span>',
+                '<span class="t-tool">  [TOOL] browser_control(action="navigate", url="youtube.com")</span>',
+                '<span class="t-ira">  ✓ Navigated to YouTube successfully</span>',
+                '<span class="t-tool">  [TOOL] browser_control(action="type", text="KGF songs", press_enter=True)</span>',
+                '<span class="t-ira">  ✓ Playing KGF Songs video</span>',
+                '<span class="t-ira">IRA > Haan ji! KGF ke gaane chal rahe hain! 🎵</span>'
             ],
             2: [
-                '<span class="term-user">You ></span> show gold price trend chart for 2020-2024',
-                '<span class="term-dim">  ◎ 🧠 Querying financial search engine & memory...</span>',
-                '<span class="term-tool">  [TOOL] map_control(action="chart", title="Gold Market Insights")</span>',
-                '<span class="term-ira">  ✓ Rendered dynamic Gold price line chart in QML window</span>',
-                '<span class="term-ira">IRA > Gold prices ka dynamic chart aapke screen par hai! 📈</span>'
+                '<span class="t-user">You ></span> show gold price trend chart for 2020-2024',
+                '<span class="t-dim">  ◎ 🧠 Querying financial search engine & memory...</span>',
+                '<span class="t-tool">  [TOOL] map_control(action="chart", title="Gold Market Insights")</span>',
+                '<span class="t-ira">  ✓ Rendered dynamic Gold price line chart in QML window</span>',
+                '<span class="t-ira">IRA > Gold prices ka dynamic chart aapke screen par hai! 📈</span>'
             ],
             3: [
-                '<span class="term-user">You ></span> send WhatsApp message to Mom saying I am reaching in 10 mins',
-                '<span class="term-dim">  ◎ 🌐 WhatsApp Bridge executing PyAutoGUI & DOM automation...</span>',
-                '<span class="term-tool">  [TOOL] whatsapp_control(contact="Mom", message="I am reaching in 10 mins")</span>',
-                '<span class="term-ira">  ✓ WhatsApp web opened, Mom contact selected, message sent.</span>',
-                '<span class="term-ira">IRA > Message send ho gaya Mom ko! 💬</span>'
+                '<span class="t-user">You ></span> send WhatsApp message to Mom saying I am reaching in 10 mins',
+                '<span class="t-dim">  ◎ 🌐 WhatsApp Bridge executing PyAutoGUI & DOM automation...</span>',
+                '<span class="t-tool">  [TOOL] whatsapp_control(contact="Mom", message="I am reaching in 10 mins")</span>',
+                '<span class="t-ira">  ✓ WhatsApp web opened, Mom contact selected, message sent.</span>',
+                '<span class="t-ira">IRA > Message send ho gaya Mom ko! 💬</span>'
             ]
         };
 
-        function runPreset(num) {
-            const body = document.getElementById('termBody');
-            body.innerHTML = '';
-            const lines = presets[num];
-            lines.forEach((line, idx) => {
+        function execPreset(num) {
+            const screen = document.getElementById('termScreen');
+            screen.innerHTML = '';
+            const lines = scripts[num];
+            lines.forEach((l, i) => {
                 setTimeout(() => {
                     const div = document.createElement('div');
-                    div.innerHTML = line;
-                    body.appendChild(div);
-                    body.scrollTop = body.scrollHeight;
-                }, idx * 600);
+                    div.innerHTML = l;
+                    screen.appendChild(div);
+                    screen.scrollTop = screen.scrollHeight;
+                }, i * 600);
             });
         }
     </script>
