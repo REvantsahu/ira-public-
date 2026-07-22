@@ -4082,6 +4082,13 @@ Always check your spelling and parameter types before calling a tool."""
 
 def execute_tool(name: str, args: dict, event_callback=None) -> str:
     """Execute a tool by name with arguments."""
+    try:
+        return _execute_tool_inner(name, args, event_callback)
+    except Exception as e:
+        return f"Tool execution error ({name}): {e}"
+
+
+def _execute_tool_inner(name: str, args: dict, event_callback=None) -> str:
     
     # Handle Consolidated Node tools
     if name == "node_control":

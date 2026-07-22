@@ -1,8 +1,25 @@
 """Gemini API client — using google-genai (new SDK) + multi-model fallback."""
 
 import time
+import threading
+import socket
 from google import genai
 from google.genai import types
+
+
+def is_online(timeout: float = 2.0) -> bool:
+    """Fast check if internet connectivity is available."""
+    try:
+        s = socket.create_connection(("8.8.8.8", 53), timeout=timeout)
+        s.close()
+        return True
+    except Exception:
+        try:
+            s = socket.create_connection(("1.1.1.1", 53), timeout=timeout)
+            s.close()
+            return True
+        except Exception:
+            return False
 
 from key_manager import APIKeyManager
 from config import MODEL, SYSTEM_PROMPT, TOOL_DECLARATIONS, MCP_AUTO_DISCOVER, REASONING_MODE, REASONING_LEVEL, REASONING_BUDGET_25
@@ -250,6 +267,7 @@ class GeminiAgent:
         cleanup_expired(self.state)
         self.current_model = self._pick_best_model()
         self.event_callback = event_callback
+        self._send_lock = threading.Lock()
         self._init_client()
         self._rebuild_tools()
 
@@ -384,13 +402,19 @@ class GeminiAgent:
 
     def send(self, user_message: str, with_screenshot: bool = True, attached_image_path: str | None = None, attached_audio_path: str | None = None, extra_image_paths: list[str] | None = None) -> str:
         """Send message with optional screenshot, attached images, and attached audio. Handles tool call loop."""
-        from stop import set_task_running, reset_stop
-        reset_stop()
-        set_task_running(True)
-        try:
-            return self._send_inner(user_message, with_screenshot, attached_image_path, attached_audio_path, extra_image_paths)
-        finally:
-            set_task_running(False)
+        if not is_online():
+            offline_msg = "⚠️ Network offline connection lag raha hai bro! Please check your internet connection. Internet connectivity ke bina online Gemini API calls execute nahi honge."
+            self._emit("error", {"message": "Network Offline"})
+            return offline_msg
+
+        with self._send_lock:
+            from stop import set_task_running, reset_stop
+            reset_stop()
+            set_task_running(True)
+            try:
+                return self._send_inner(user_message, with_screenshot, attached_image_path, attached_audio_path, extra_image_paths)
+            finally:
+                set_task_running(False)
 
     def _send_inner(self, user_message: str, with_screenshot: bool, attached_image_path: str | None, attached_audio_path: str | None, extra_image_paths: list[str] | None) -> str:
         """Inner send logic — separated for clean task running flag management."""

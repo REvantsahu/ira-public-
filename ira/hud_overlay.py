@@ -777,7 +777,10 @@ class HUDBridge(QObject):
     @Slot(str, str, str)
     def sendMessage(self, text: str, images_json: str = "[]", texts_json: str = "[]"):
         if self._processing or (self._agent_thread and self._agent_thread.is_alive()):
-            print("[HUD] Cannot send message: an agent is already processing or terminating.")
+            print(f"[HUD] Agent is busy — queuing message: '{text[:50]}'")
+            self.add_message("user", text)
+            self._msg_queue.put((text, images_json, texts_json))
+            self.activityLog.emit(f"📌 Message queued ({self._msg_queue.qsize()} pending): {text[:40]}...")
             return
             
         has_attachments = (images_json and images_json != "[]") or (texts_json and texts_json != "[]")
@@ -3127,7 +3130,16 @@ class HUDBridge(QObject):
                 self.errorOccurred.emit(str(e))
                 self.statusChanged.emit("error", "Error")
         finally:
-            self._set_processing(False)
+            if not self._msg_queue.empty():
+                try:
+                    next_text, next_imgs, next_txts = self._msg_queue.get_nowait()
+                    print(f"[HUD] Dequeuing next user message ({self._msg_queue.qsize()} remaining)...")
+                    self._process_message(next_text, next_imgs, next_txts)
+                except Exception as ex:
+                    print(f"[HUD] Queued message execution error: {ex}")
+                    self._set_processing(False)
+            else:
+                self._set_processing(False)
 
     @Slot(str)
     def _on_stream_ready(self, html: str):
@@ -3622,34 +3634,40 @@ def launch_hud(on_ready=None):
     hotkey_timer.start(100)
 
     # ── Click-outside-to-close (chat popup / sidebar only) ──
+    last_cursor_x = -1
+    last_cursor_y = -1
+
     def update_clickthrough():
-        nonlocal clickthrough_active
+        nonlocal clickthrough_active, last_cursor_x, last_cursor_y
         cursor = QCursor.pos()
+        cx, cy = cursor.x(), cursor.y()
         
-        # Emit mouse position relative to QML overlay window for eye tracking
-        try:
-            win = bridge._qml_window
-            if win:
-                rx = cursor.x() - win.x()
-                ry = cursor.y() - win.y()
-                bridge.mouseMoved.emit(rx, ry)
-        except Exception:
-            pass
+        # Optimize performance: only update and emit signal when cursor actually moves
+        if cx != last_cursor_x or cy != last_cursor_y:
+            last_cursor_x, last_cursor_y = cx, cy
+            try:
+                win = bridge._qml_window
+                if win:
+                    rx = cx - win.x()
+                    ry = cy - win.y()
+                    bridge.mouseMoved.emit(rx, ry)
+            except Exception:
+                pass
 
-        in_hotspot = bridge.is_in_hotspot(cursor.x(), cursor.y())
+            in_hotspot = bridge.is_in_hotspot(cx, cy)
 
-        if in_hotspot and clickthrough_active:
-            style = user32.GetWindowLongPtrW(hwnd, GWL_EXSTYLE)
-            user32.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style & ~WS_EX_TRANSPARENT)
-            clickthrough_active = False
-        elif not in_hotspot and not clickthrough_active:
-            style = user32.GetWindowLongPtrW(hwnd, GWL_EXSTYLE)
-            user32.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style | WS_EX_TRANSPARENT)
-            clickthrough_active = True
+            if in_hotspot and clickthrough_active:
+                style = user32.GetWindowLongPtrW(hwnd, GWL_EXSTYLE)
+                user32.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style & ~WS_EX_TRANSPARENT)
+                clickthrough_active = False
+            elif not in_hotspot and not clickthrough_active:
+                style = user32.GetWindowLongPtrW(hwnd, GWL_EXSTYLE)
+                user32.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style | WS_EX_TRANSPARENT)
+                clickthrough_active = True
 
     hotspot_timer = QTimer()
     hotspot_timer.timeout.connect(update_clickthrough)
-    hotspot_timer.start(50)
+    hotspot_timer.start(60)
 
     # ── Connect bridge hide signal to window ──
     def _on_hud_hidden():
