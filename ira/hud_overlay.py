@@ -227,12 +227,6 @@ class HUDBridge(QObject):
     avatarStateChanged = Signal(str)  # "idle", "listening", "thinking", "talking"
     avatarExpressionChanged = Signal(str)
     mouseMoved = Signal(int, int)  # x, y (relative to window)
-    gestureDetected = Signal(str, float)  # gesture_name, confidence
-    faceStateChanged = Signal(str, float)  # expression, confidence (for avatar mirroring)
-    gestureLogEntry = Signal(str)  # JSON log entry for gesture monitor window
-    cameraFrameUpdate = Signal(str)  # base64 JPEG frame for camera preview
-    gestureOverlayEvent = Signal(str)  # JSON event for HUD gesture drawing/toasts
-    gestureControlState = Signal(str)  # JSON control_state from gesture_control.py (engaged/cursor/trail/bursts)
 
     audioLevelChanged = Signal(float)
     themeChanged = Signal(str)
@@ -489,24 +483,36 @@ class HUDBridge(QObject):
     @Slot(str, str)
     def hideHUD(self, chat_model_json: str = "", node_model_json: str = ""):
         """Hide the HUD overlay (minimize to tray). Auto-save current chat."""
-        if self._chat_history:
-            chat_model_data = json.loads(chat_model_json) if chat_model_json else []
-            nodes_data = json.loads(node_model_json) if node_model_json else []
-            conv_mgr.save_conversation(
-                self._chat_history,
-                self._first_prompt,
-                chat_model_data=chat_model_data,
-                nodes=nodes_data,
-                logs=self._activity_logs,
-                tool_executions=self._tool_executions
-            )
+        try:
+            if self._chat_history:
+                chat_model_data = json.loads(chat_model_json) if chat_model_json else []
+                nodes_data = json.loads(node_model_json) if node_model_json else []
+                conv_mgr.save_conversation(
+                    self._chat_history,
+                    self._first_prompt,
+                    chat_model_data=chat_model_data,
+                    nodes=nodes_data,
+                    logs=self._activity_logs,
+                    tool_executions=self._tool_executions
+                )
+        except Exception as e:
+            print(f"[HUD] Save error on hide: {e}")
+
         self.hudHidden.emit()
         self._hud_active = False
+        if hasattr(self, "_qml_window") and self._qml_window:
+            from PySide6.QtCore import QMetaObject, Qt
+            QMetaObject.invokeMethod(self._qml_window, "hideOverlay", Qt.ConnectionType.QueuedConnection)
+            QMetaObject.invokeMethod(self._qml_window, "hide", Qt.ConnectionType.QueuedConnection)
 
     @Slot()
     def showHUD(self):
         """Show the HUD overlay."""
         self._hud_active = True
+        if hasattr(self, "_qml_window") and self._qml_window:
+            from PySide6.QtCore import QMetaObject, Qt
+            QMetaObject.invokeMethod(self._qml_window, "showOverlay", Qt.ConnectionType.QueuedConnection)
+            QMetaObject.invokeMethod(self._qml_window, "show", Qt.ConnectionType.QueuedConnection)
         self.shiftToActiveScreen()
 
     @Slot()
@@ -516,6 +522,38 @@ class HUDBridge(QObject):
             self.hideHUD()
         else:
             self.showHUD()
+
+    @Slot(result=bool)
+    def triggerCollapse(self) -> bool:
+        """Collapse HUD dock directly via QML method call."""
+        try:
+            if hasattr(self, "_qml_window") and self._qml_window:
+                from PySide6.QtCore import QMetaObject, Qt
+                QMetaObject.invokeMethod(self._qml_window, "collapseDockFromPython", Qt.ConnectionType.QueuedConnection)
+                print("[HUD] Triggered collapseDockFromPython via QMetaObject")
+                return True
+            else:
+                print("[HUD] Cannot collapse: _qml_window not set")
+                return False
+        except Exception as e:
+            print(f"[HUD] Error in triggerCollapse: {e}")
+            return False
+
+    @Slot(result=bool)
+    def triggerExpand(self) -> bool:
+        """Expand HUD dock directly via QML method call."""
+        try:
+            if hasattr(self, "_qml_window") and self._qml_window:
+                from PySide6.QtCore import QMetaObject, Qt
+                QMetaObject.invokeMethod(self._qml_window, "expandDockFromPython", Qt.ConnectionType.QueuedConnection)
+                print("[HUD] Triggered expandDockFromPython via QMetaObject")
+                return True
+            else:
+                print("[HUD] Cannot expand: _qml_window not set")
+                return False
+        except Exception as e:
+            print(f"[HUD] Error in triggerExpand: {e}")
+            return False
 
     @Slot(bool)
     def setHudActive(self, active: bool):
@@ -1454,7 +1492,7 @@ class HUDBridge(QObject):
                         "HOW TO HANDLE REQUESTS:\n"
                         "1. CONVERSATIONS, MATH, AND BANTER: If the user is chatting, asking questions, or requesting simple math/calculations (e.g. 'what is 2+2-2 divided by 2'), answer it DIRECTLY yourself. Do NOT call call_agent.\n\n"
                         "2. SINGLE TOOL CALL LIMITATION: You can only execute ONE tool call per turn. If you think the task requires multiple tool calls, you MUST delegate the entire task to the background agent by calling call_agent.\n\n"
-                        "3. SIMPLE ACTIONS: Use native tools (system_control, control_servo, change_avatar_expression, change_hologram_theme, wait, activate_reasoning) directly to fulfill simple requests like checking volume, rotating the servo motor, changing your own expressions or color theme. Do NOT call call_agent for these.\n\n"
+                        "3. SIMPLE ACTIONS: Use native tools (system_control, control_servo, change_avatar_expression, change_hologram_theme, collapse_hud, expand_hud, wait, activate_reasoning) directly to fulfill simple requests like checking volume, rotating the servo motor, changing your own expressions/color theme, or collapsing/expanding the HUD overlay. Use collapse_hud and expand_hud ONLY when the user explicitly asks to collapse, minimize, expand, or show the HUD. Do NOT call call_agent for these.\n\n"
                         "4. DELEGATED COMPLEX TASKS, MEDIA, SEARCH & SCREEN VISION: If the request requires any tools not in your native list (like file_control, browser_control, input_control, screen_control, todo_control, send_whatsapp, map_control, node_control, media_generation, web_search, weather_control, memory_control, clipboard_control), or if the task is complex, you MUST call the call_agent tool. Do NOT try to guess paths or perform web searches yourself. Instead, delegate by calling call_agent(prompt='...'). For screen inspection, always call call_agent(prompt='Take a screenshot of the current screen and analyze it to answer the user').\n\n"
                         "5. ALERTS / REMINDERS: If you receive a [SYSTEM_ALERT] containing a user reminder, announce it dynamically to the user in a natural, caring, and playful Hinglish tone.\n\n"
                         "Be natural, be brief, be helpful. Hinglish mein baat karo."
@@ -1859,8 +1897,8 @@ class HUDBridge(QObject):
                     else:
                         print("[HUD] Native tool response sent — turn_complete_received set (audio still playing).")
                 else:
-                    # For heavy tools like call_agent, trigger a follow-up client turn to make the Live model speak the result
-                    # and also show the text response in chat if the user used text input.
+                    # For heavy tools like call_agent, the agent result is rendered inside the Purple Agent Box.
+                    # We log the history and prompt Gemini Live to speak/generate IRA's final response turn.
                     result_str = str(result)
                     if getattr(self, "_last_input_source", "voice") == "text":
                         self.add_message("assistant", result_str)
@@ -1869,11 +1907,9 @@ class HUDBridge(QObject):
                         )
                         self._activity_logs.append({
                             "timestamp": datetime.datetime.now().isoformat(),
-                            "message": f"🤖 IRA: {result_str}"
+                            "message": f"🤖 Agent Result: {result_str}"
                         })
                         self.requestAutoSave.emit()
-                        html = _md_to_html(result_str)
-                        self._streamReadySignal.emit(html)
                         self._set_processing(False)
                         self.statusChanged.emit("idle", "Ready")
 
@@ -2478,11 +2514,11 @@ class HUDBridge(QObject):
     @Slot(result=str)
     def startPhoneBridge(self) -> str:
         """Start the FastAPI phone bridge server, generate QR code, and return details."""
+        import json
         try:
+            from pathlib import Path
             import whatsapp_bridge
             import qrcode
-            import json
-            from pathlib import Path
             
             # Start uvicorn server in a background thread if it isn't running
             server = whatsapp_bridge.start_server_in_thread()
@@ -2490,33 +2526,39 @@ class HUDBridge(QObject):
             # Generate a new PIN code
             pin = server.new_key()
             
-            # Construct the connection URL (use secure=True for HTTPS)
-            url = f"{server.get_url(secure=True)}/auto-login?key={pin}"
+            # Use HTTPS (secure=True) for QR code URL so mobile browsers connect securely
+            https_url = server.get_url(secure=True)
+            http_url = server.get_url(secure=False)
+            auto_login_url = f"{https_url}/auto-login?key={pin}"
             
             # Generate QR code image
             qr = qrcode.QRCode(box_size=5, border=2)
-            qr.add_data(url)
+            qr.add_data(auto_login_url)
             qr.make(fit=True)
             img = qr.make_image(fill_color="black", back_color="white")
             
-            # Save QR code inside web/ or scratch/ directory so QML can read it
+            # Save QR code inside scratch/ directory so QML can read it
             scratch_dir = Path(__file__).resolve().parent / "scratch"
             scratch_dir.mkdir(parents=True, exist_ok=True)
             qr_path = scratch_dir / "phone_qr.png"
             img.save(str(qr_path))
             
-            # Return QML load details (use absolute file:/// path)
+            # Return QML load details
             qr_url = qr_path.as_uri()
             
             return json.dumps({
                 "ok": True,
-                "url": server.get_url(secure=True),
+                "url": https_url,
+                "http_url": http_url,
                 "pin": pin,
                 "qr_path": qr_url
             })
         except Exception as e:
             print(f"[Phone Bridge] Error starting: {e}")
-            return json.dumps({"ok": False, "error": str(e)})
+            err_msg = str(e)
+            if "No module named" in err_msg:
+                err_msg = f"Missing dependency: {err_msg}. Please run 'python setup.py'."
+            return json.dumps({"ok": False, "error": err_msg})
 
     @Slot()
     def stopPhoneBridge(self):
@@ -2734,50 +2776,8 @@ class HUDBridge(QObject):
             print(f"[SETTINGS] Error saving: {e}")
 
     def _apply_settings(self, settings: dict):
-        """Apply setting changes dynamically (e.g., start/stop gesture engine, reasoning mode)."""
+        """Apply setting changes dynamically (e.g., reasoning mode)."""
         try:
-            gestures_enabled = settings.get("gestures", {}).get("enabled", True)
-            from gesture_engine import get_engine
-            engine = get_engine()
-            
-            if gestures_enabled:
-                if not engine._running:
-                    print("[HUD] Starting gesture engine via settings change...")
-                    def _start():
-                        try:
-                            engine.start(0)
-                        except Exception as e:
-                            print(f"[HUD] Failed to start gesture engine: {e}")
-                    threading.Thread(target=_start, daemon=True).start()
-            else:
-                if engine._running:
-                    print("[HUD] Stopping gesture engine via settings change...")
-                    def _stop():
-                        try:
-                            engine.stop()
-                        except Exception as e:
-                            print(f"[HUD] Failed to stop gesture engine: {e}")
-                    threading.Thread(target=_stop, daemon=True).start()
-
-            # Apply gesture-control settings to the controller + engine
-            try:
-                gesture_cfg = settings.get("gestures", {})
-                from gesture_control import get_controller
-                ctrl = get_controller()
-                # system_control toggles real OS actions (cursor/click/scroll)
-                ctrl.system_control = bool(gesture_cfg.get("system_control", True))
-                # smoothing 0..1 -> One Euro min_cutoff (0=raw 3.0, 1=very smooth 0.6)
-                sm = float(gesture_cfg.get("smoothing", 0.7))
-                sm = max(0.0, min(1.0, sm))
-                mc = 3.0 - sm * 2.4  # 3.0 down to 0.6
-                ctrl._fx.min_cutoff = mc
-                ctrl._fy.min_cutoff = mc
-                # skeleton toggle propagates to engine preview drawing
-                engine._config["skeleton"] = bool(gesture_cfg.get("skeleton", True))
-                print(f"[HUD] Gesture control: system={'on' if ctrl.system_control else 'off'} smoothing={sm:.2f} skeleton={engine._config['skeleton']}")
-            except Exception as e:
-                print(f"[HUD] Gesture control settings apply failed: {e}")
-
             # Apply reasoning mode settings
             reasoning_enabled = settings.get("reasoning", {}).get("enabled", True)
             reasoning_level = settings.get("reasoning", {}).get("level", "high")
@@ -2890,206 +2890,6 @@ class HUDBridge(QObject):
 
         threading.Thread(target=_settings_init, daemon=True).start()
 
-        # Auto-start gesture engine for continuous hand + face tracking
-        def _gesture_init():
-            time.sleep(3)  # delay to let camera warm up after system load
-            try:
-                from gesture_engine import get_engine
-                engine = get_engine()
-
-                def _emit_overlay(kind: str, payload: dict):
-                    payload["kind"] = kind
-                    self.gestureOverlayEvent.emit(json.dumps(payload, ensure_ascii=False))
-
-                def _run_gesture_action(action: str):
-                    if not action or action == "none":
-                        return "No mapped action"
-                    try:
-                        if action == "toggle_voice":
-                            QMetaObject.invokeMethod(self, "toggleVoiceMode", Qt.ConnectionType.QueuedConnection)
-                            return "Voice toggled"
-                        if action == "stop_processing":
-                            self.stopProcessing()
-                            return "Stopped current task"
-                        from tools import execute_tool
-                        args_by_action = {
-                            "scroll_up": ("scroll", {"direction": "up", "amount": 5}),
-                            "scroll_down": ("scroll", {"direction": "down", "amount": 5}),
-                            "volume_up": ("volume_up", {"steps": 2}),
-                            "volume_down": ("volume_down", {"steps": 2}),
-                            "click": ("click", {}),
-                            "take_screenshot": ("take_screenshot", {}),
-                            "media_play_pause": ("media_play_pause", {}),
-                            "media_next": ("media_next", {}),
-                            "media_prev": ("media_prev", {}),
-                            "media_stop": ("media_stop", {}),
-                            "volume_mute": ("volume_mute", {}),
-                            "todo_list": ("todo_list", {}),
-                            # Browser back/forward via Alt+Left / Alt+Right
-                            "press_key_alt_back": ("hotkey", {"keys": ["alt", "left"]}),
-                            "press_key_alt_fwd": ("hotkey", {"keys": ["alt", "right"]}),
-                        }
-                        # Fun reactions handled via the QML-facing slot, not execute_tool
-                        if action == "trigger_headpat":
-                            QMetaObject.invokeMethod(self, "triggerReaction",
-                                                     Qt.ConnectionType.QueuedConnection,
-                                                     Q_ARG(str, "headpat"))
-                            return "Headpat reaction triggered"
-                        tool_name, tool_args = args_by_action.get(action, (action, {}))
-                        if tool_name == "todo_add":
-                            return "Todo add needs text, skipped from gesture"
-                        if tool_name == "web_search":
-                            return "Web search needs a query, skipped from gesture"
-                        return execute_tool(tool_name, tool_args)
-                    except Exception as e:
-                        return f"Action failed: {e}"
-
-                last_state_emit = {"t": 0.0}
-
-                # Lazy-init the gesture controller and bind screen size + mirror.
-                from gesture_control import get_controller as _get_ctrl
-                controller = _get_ctrl()
-                try:
-                    import pyautogui as _pag
-                    _sz = _pag.size()
-                    controller.configure_screen(_sz.width, _sz.height)
-                except Exception:
-                    pass
-                GESTURE_MIRROR_X = True  # mirror so moving hand right moves cursor right
-
-                def _mirror_hand(hand):
-                    """Return a copy of hand_state with X mirrored to match preview."""
-                    if not hand or not GESTURE_MIRROR_X:
-                        return hand
-                    out = dict(hand)
-                    idx = dict(out.get("index") or {})
-                    idx["x"] = 1.0 - idx.get("x", 0.5)
-                    palm = dict(out.get("palm") or {})
-                    palm["x"] = 1.0 - palm.get("x", 0.5)
-                    wrist = dict(out.get("wrist") or {})
-                    wrist["x"] = 1.0 - wrist.get("x", 0.5)
-                    out["index"], out["palm"], out["wrist"] = idx, palm, wrist
-                    return out
-
-                def _on_state(state):
-                    """Continuous hand pointer state: drive the controller + HUD FX."""
-                    now = time.time()
-                    if now - last_state_emit["t"] < 0.025:
-                        return
-                    last_state_emit["t"] = now
-                    hand = state.get("primary_hand")
-
-                    # Route through the controller (real OS actions when engaged)
-                    ctrl_hand = _mirror_hand(hand) if hand else None
-                    # Pause real control during voice mode to avoid chaos
-                    if self._voice_mode:
-                        controller.disable()
-                    else:
-                        controller.enable()
-                    try:
-                        ctrl_state = controller.process(ctrl_hand)
-                    except Exception as e:
-                        print(f"[HUD] gesture controller error: {e}")
-                        ctrl_state = {"engaged": False, "cursor_x": 0.5, "cursor_y": 0.5,
-                                      "trail": [], "bursts": []}
-                    # Emit rich control state for the trail / engage ring / burst FX
-                    self.gestureControlState.emit(json.dumps(ctrl_state, ensure_ascii=False))
-
-                    # Keep the legacy overlay events (HUD canvas pinch-draw, reticle)
-                    point = (ctrl_hand or {}).get("index", {}) if ctrl_hand else {}
-                    _emit_overlay("state", {
-                        "x": point.get("x", ctrl_state.get("cursor_x", 0.5)),
-                        "y": point.get("y", ctrl_state.get("cursor_y", 0.5)),
-                        "pinch": bool((hand or {}).get("pinch")),
-                        "grab": bool((hand or {}).get("grab") or (hand or {}).get("fist")),
-                        "openPalm": bool((hand or {}).get("open_palm")),
-                        "hands": state.get("hands_detected", 0),
-                        "faces": state.get("faces_detected", 0),
-                    })
-
-                def _on_gesture(gesture):
-                    """Emit gesture to QML for avatar reactions + action dispatch."""
-                    # Emit log entry
-                    import json as _json
-                    mapping = engine.get_mappings().get(gesture.name, {})
-                    action = mapping.get("action", "none")
-                    log_data = _json.dumps({
-                        "type": gesture.gesture_type.value if hasattr(gesture.gesture_type, "value") else "hand",
-                        "name": gesture.name,
-                        "confidence": round(gesture.confidence, 2),
-                        "action": action,
-                        "time": time.strftime("%H:%M:%S")
-                    })
-                    self.gestureLogEntry.emit(log_data)
-                    _emit_overlay("toast", {
-                        "name": gesture.name,
-                        "confidence": round(gesture.confidence, 2),
-                        "action": action,
-                    })
-
-                    if not self._voice_mode:
-                        self.gestureDetected.emit(gesture.name, gesture.confidence)
-                    # Execute mapped action
-                    if action and action != "none":
-                        result = _run_gesture_action(action)
-                        _emit_overlay("toast", {
-                            "name": gesture.name,
-                            "confidence": round(gesture.confidence, 2),
-                            "action": action,
-                            "result": result[:80] if result else "",
-                        })
-
-                def _on_face(expression, confidence):
-                    """Emit face expression to QML for avatar mirroring."""
-                    import json as _json
-                    log_data = _json.dumps({
-                        "type": "face",
-                        "name": expression,
-                        "confidence": round(confidence, 2),
-                        "action": "mirror",
-                        "time": time.strftime("%H:%M:%S")
-                    })
-                    self.gestureLogEntry.emit(log_data)
-                    self.faceStateChanged.emit(expression, confidence)
-
-                engine.on_gesture = _on_gesture
-                engine.on_state = _on_state
-
-                # Register face expression callbacks for avatar mirroring
-                for expr in ["smile", "frown", "open_mouth", "blink_both",
-                             "wink_left", "wink_right", "raise_eyebrows",
-                             "head_nod", "head_shake"]:
-                    engine.on(expr, lambda g, e=expr: _on_face(e, g.confidence))
-
-                # Check settings to see if we should start the engine
-                from settings_manager import load_settings
-                settings = load_settings()
-                gestures_enabled = settings.get("gestures", {}).get("enabled", True)
-                if gestures_enabled:
-                    engine.start(0)
-                    print("[HUD] Gesture engine auto-started")
-                else:
-                    print("[HUD] Gesture engine configured but not started (disabled in settings)")
-
-                # Start camera frame streaming for gesture monitor
-                def _stream_frames():
-                    time.sleep(2)
-                    while not self._stop_flag.is_set():
-                        if self._gesture_monitor_shown:
-                            try:
-                                b64 = engine.get_latest_frame_base64()
-                                if b64:
-                                    self.cameraFrameUpdate.emit(b64)
-                            except Exception:
-                                pass
-                        time.sleep(0.15)  # ~7fps for preview
-
-                threading.Thread(target=_stream_frames, daemon=True).start()
-            except Exception as e:
-                print(f"[HUD] Gesture engine auto-start failed (non-critical): {e}")
-
-        threading.Thread(target=_gesture_init, daemon=True).start()
-
         # Start background Scene Analyzer
         threading.Thread(target=self._scene_analyzer_loop, daemon=True).start()
 
@@ -3103,23 +2903,14 @@ class HUDBridge(QObject):
         from config import VISION_MODEL
 
         time.sleep(10)  # Wait for HUD startup
-        
-        last_faces = -1
         last_analysis_time = 0
         
         while not self._voice_stop.is_set() and not self._stop_flag.is_set():
             try:
-                # 1. Read current face count from gesture engine
-                from gesture_engine import get_engine
-                engine = get_engine()
-                status = engine.get_status()
-                faces = status.get("faces_detected", 0)
-                
-                # Analyze only if faces count changes OR every 90 seconds
                 now = time.time()
-                should_analyze = (faces != last_faces) or (now - last_analysis_time > 90.0)
+                should_analyze = (now - last_analysis_time > 90.0)
                 
-                if should_analyze and status.get("running"):
+                if should_analyze:
                     b64 = get_frame_base64(0)
                     if b64:
                         km = APIKeyManager()
@@ -3550,16 +3341,28 @@ def launch_hud(on_ready=None):
             GLOBAL_MUTEX = kernel32.CreateMutexW(None, True, mutex_name)
             last_error = kernel32.GetLastError()
             if last_error == ERROR_ALREADY_EXISTS:
-                print("[HUD] Another instance of IRA HUD is already running. Exiting.")
-                sys.exit(0)
+                print("[HUD] Existing background instance detected. Terminating old instance to open fresh HUD...")
+                try:
+                    current_pid = os.getpid()
+                    import psutil
+                    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                        if proc.info['pid'] != current_pid and proc.info['name'] in ('python.exe', 'pythonw.exe'):
+                            cmdline = ' '.join(proc.info['cmdline'] or []).lower()
+                            if 'hud_overlay' in cmdline or 'main.py' in cmdline:
+                                proc.kill()
+                    time.sleep(0.3)
+                    GLOBAL_MUTEX = kernel32.CreateMutexW(None, True, mutex_name)
+                except Exception as ex:
+                    print(f"[HUD] Another instance of IRA HUD is running and could not be terminated: {ex}")
+                    sys.exit(0)
         except Exception as e:
             print(f"[HUD] Single-instance mutex check failed (non-critical): {e}")
 
     # DuckDB / marketplace patch
     os.environ["QML_XHR_ALLOW_FILE_READ"] = "1"
 
-    # Fusion style for custom TextField backgrounds
-    os.environ["QT_QUICK_CONTROLS_STYLE"] = "Fusion"
+    # Basic style for custom ScrollBars, ToolTips, and TextField backgrounds
+    os.environ["QT_QUICK_CONTROLS_STYLE"] = "Basic"
 
     # Initialize WebEngine before QApplication
     from PySide6.QtWebEngineQuick import QtWebEngineQuick
@@ -3567,6 +3370,27 @@ def launch_hud(on_ready=None):
 
     app = QApplication(sys.argv if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else ["hud"])
     app.setQuitOnLastWindowClosed(False)  # Don't quit when HUD window closes
+
+    # Set Windows AppUserModelID for Taskbar & Task Manager process icon
+    if sys.platform == "win32":
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("RevantSahu.IRA.Agent.1")
+        except Exception:
+            pass
+
+    # Ensure logo.png is loaded for Application window icon
+    logo_file = os.path.join(ROOT_DIR, "web", "logo.png")
+    if not os.path.exists(logo_file):
+        website_logo = os.path.join(ROOT_DIR, "website", "logo.png")
+        if os.path.exists(website_logo):
+            import shutil
+            try:
+                shutil.copy2(website_logo, logo_file)
+            except Exception:
+                pass
+
+    if os.path.exists(logo_file):
+        app.setWindowIcon(QIcon(logo_file))
 
     bridge = HUDBridge()
     engine = QQmlApplicationEngine()
@@ -3686,10 +3510,12 @@ def launch_hud(on_ready=None):
     clickthrough_active = True
 
     # ── System Tray ──
-    # Create a simple colored tray icon
-    tray_pixmap = QPixmap(16, 16)
-    tray_pixmap.fill(QColor(0, 200, 100, 200))
-    tray_icon = QSystemTrayIcon(QIcon(tray_pixmap), app)
+    if os.path.exists(logo_file):
+        tray_icon = QSystemTrayIcon(QIcon(logo_file), app)
+    else:
+        tray_pixmap = QPixmap(16, 16)
+        tray_pixmap.fill(QColor(0, 200, 100, 200))
+        tray_icon = QSystemTrayIcon(QIcon(tray_pixmap), app)
 
     # Tray context menu
     tray_menu = QMenu()
@@ -3827,7 +3653,8 @@ def launch_hud(on_ready=None):
 
     # ── Connect bridge hide signal to window ──
     def _on_hud_hidden():
-        window.hide()
+        QMetaObject.invokeMethod(window, "hideOverlay", Qt.ConnectionType.QueuedConnection)
+        QMetaObject.invokeMethod(window, "hide", Qt.ConnectionType.QueuedConnection)
 
     bridge.hudHidden.connect(_on_hud_hidden)
 

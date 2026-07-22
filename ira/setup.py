@@ -42,6 +42,10 @@ DEPS = [
     ("requests", "requests", "2.32.3"),
     ("httpx", "httpx", "0.28.1"),
     ("playwright", "playwright", "1.60.0"),
+    ("fastapi", "fastapi", "0.115.0"),
+    ("uvicorn", "uvicorn", "0.30.0"),
+    ("qrcode", "qrcode", "8.0"),
+    ("python-multipart", "multipart", "0.0.12"),
 
     # Voice / Audio
     ("SpeechRecognition", "speech_recognition", "3.16.1"),

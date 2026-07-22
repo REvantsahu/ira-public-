@@ -859,27 +859,44 @@ def get_battery() -> str:
 # MEDIA CONTROL
 # ═══════════════════════════════════════════════════════════════
 
+def _send_win_key(vk_code: int) -> bool:
+    import sys
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.user32.keybd_event(vk_code, 0, 0, 0)
+            ctypes.windll.user32.keybd_event(vk_code, 0, 2, 0)  # 2 = KEYEVENTF_KEYUP
+            return True
+        except Exception:
+            pass
+    return False
+
+
 def media_play_pause() -> str:
     """Toggle play/pause for current media."""
-    pyautogui.press("playpause")
+    if not _send_win_key(0xB3):  # VK_MEDIA_PLAY_PAUSE
+        pyautogui.press("playpause")
     return "Media: Play/Pause toggled"
 
 
 def media_next() -> str:
     """Skip to next track."""
-    pyautogui.press("nexttrack")
+    if not _send_win_key(0xB0):  # VK_MEDIA_NEXT_TRACK
+        pyautogui.press("nexttrack")
     return "Media: Next track"
 
 
 def media_prev() -> str:
     """Go to previous track."""
-    pyautogui.press("prevtrack")
+    if not _send_win_key(0xB1):  # VK_MEDIA_PREV_TRACK
+        pyautogui.press("prevtrack")
     return "Media: Previous track"
 
 
 def media_stop() -> str:
     """Stop media playback."""
-    pyautogui.press("stop")
+    if not _send_win_key(0xB2):  # VK_MEDIA_STOP
+        pyautogui.press("stop")
     return "Media: Stopped"
 
 
@@ -1804,81 +1821,6 @@ def list_cameras() -> str:
     return "\n".join(lines)
 
 
-def gesture_start(camera_index: int = 0) -> str:
-    """Start the gesture recognition engine. Detects hand gestures, face expressions, and claps."""
-    from gesture_engine import get_engine
-    engine = get_engine()
-    if engine.is_active:
-        return "Gesture engine is already running."
-    engine.start(camera_index)
-    return f"Gesture engine started on camera {camera_index}. Listening for gestures."
-
-
-def gesture_stop() -> str:
-    """Stop the gesture recognition engine."""
-    from gesture_engine import get_engine
-    engine = get_engine()
-    if not engine.is_active:
-        return "Gesture engine is not running."
-    engine.stop()
-    return "Gesture engine stopped."
-
-
-def gesture_status() -> str:
-    """Get the current status of the gesture engine — what's detected, active mappings, etc."""
-    from gesture_engine import get_engine
-    engine = get_engine()
-    status = engine.get_status()
-    lines = [
-        f"Running: {status['running']}",
-        f"Camera: {status['camera_index']}",
-        f"Hands detected: {status['hands_detected']}",
-        f"Faces detected: {status['faces_detected']}",
-        f"Current gestures: {', '.join(status['current_gestures']) or 'none'}",
-        f"Gesture mappings: {status['mappings_count']}",
-    ]
-    return "\n".join(lines)
-
-
-def gesture_list_mappings() -> str:
-    """List all configured gesture-to-action mappings."""
-    from gesture_engine import get_engine
-    engine = get_engine()
-    mappings = engine.get_mappings()
-    if not mappings:
-        return "No gesture mappings configured."
-    lines = []
-    for name, info in mappings.items():
-        action = info.get("action", "none")
-        desc = info.get("description", "")
-        lines.append(f"  {name} → {action} — {desc}")
-    return "Gesture Mappings:\n" + "\n".join(lines)
-
-
-def gesture_set_mapping(gesture: str, action: str, description: str = "") -> str:
-    """Set a custom gesture-to-action mapping. User can define their own controls."""
-    from gesture_engine import get_engine
-    engine = get_engine()
-    engine.set_mapping(gesture, action, description)
-    return f"Gesture '{gesture}' mapped to action '{action}'."
-
-
-def gesture_remove_mapping(gesture: str) -> str:
-    """Remove a gesture-to-action mapping."""
-    from gesture_engine import get_engine
-    engine = get_engine()
-    if engine.remove_mapping(gesture):
-        return f"Gesture mapping '{gesture}' removed."
-    return f"Gesture '{gesture}' not found in mappings."
-
-
-def gesture_config_enabled(enabled: bool = True) -> str:
-    """Enable or disable gesture recognition (hand gestures + face expressions)."""
-    from gesture_engine import get_engine
-    engine = get_engine()
-    engine.update_config({"enabled": enabled, "hand_gestures": enabled, "face_expressions": enabled})
-    state = "enabled" if enabled else "disabled"
-    return f"Gesture recognition {state}."
 
 
 def clap_start() -> str:
@@ -3844,26 +3786,8 @@ def weather_control(location: str = "", detailed: bool = False) -> str:
         return get_weather_detailed(location)
     return get_weather(location)
 
-def sensor_control(action: str, camera_index: int = 0, gesture: str = None, action_to_map: str = None, description: str = "", enabled: bool = True, threshold: float = 0.08) -> str:
-    if action == "gesture_start":
-        return gesture_start(camera_index)
-    elif action == "gesture_stop":
-        return gesture_stop()
-    elif action == "gesture_status":
-        return gesture_status()
-    elif action == "gesture_list_mappings":
-        return gesture_list_mappings()
-    elif action == "gesture_set_mapping":
-        if gesture is None or action_to_map is None:
-            return "Error: set_mapping requires gesture and action_to_map."
-        return gesture_set_mapping(gesture, action_to_map, description)
-    elif action == "gesture_remove_mapping":
-        if gesture is None:
-            return "Error: remove_mapping requires gesture."
-        return gesture_remove_mapping(gesture)
-    elif action == "gesture_config_enabled":
-        return gesture_config_enabled(enabled)
-    elif action == "clap_start":
+def sensor_control(action: str, camera_index: int = 0, threshold: float = 0.08) -> str:
+    if action == "clap_start":
         return clap_start()
     elif action == "clap_stop":
         return clap_stop()
@@ -3925,6 +3849,44 @@ def media_generation(action: str, prompt: str = None, file_name: str = None, pat
     return f"Error: Unknown media action: {action}"
 
 
+def collapse_hud() -> str:
+    """Collapses / minimizes IRA's HUD dock overlay on screen. Use ONLY when the user explicitly asks to collapse, minimize, or hide the HUD/dock."""
+    try:
+        import hud_overlay
+        bridge = getattr(hud_overlay, "_active_bridge", None)
+        if bridge:
+            res = bridge.triggerCollapse()
+            bridge.hideHUD()
+            if res:
+                return "Successfully collapsed the HUD dock into a compact pill and closed popups."
+            else:
+                return "Notice: Triggered HUD collapse signal."
+        else:
+            return "Notice: HUD bridge is not active right now."
+    except Exception as e:
+        print(f"[TOOLS] collapse_hud error: {e}")
+        return f"Could not collapse HUD due to error: {e}"
+
+
+def expand_hud() -> str:
+    """Expands / opens IRA's HUD dock overlay on screen. Use ONLY when the user explicitly asks to expand, maximize, or open the HUD/dock."""
+    try:
+        import hud_overlay
+        bridge = getattr(hud_overlay, "_active_bridge", None)
+        if bridge:
+            res = bridge.triggerExpand()
+            bridge.showHUD()
+            if res:
+                return "Successfully expanded the HUD dock and opened controls."
+            else:
+                return "Notice: Triggered HUD expand signal."
+        else:
+            return "Notice: HUD bridge is not active right now."
+    except Exception as e:
+        print(f"[TOOLS] expand_hud error: {e}")
+        return f"Could not expand HUD due to error: {e}"
+
+
 TOOL_MAP = {
     # === CONSOLIDATED ===
     "input_control": input_control,
@@ -3939,6 +3901,8 @@ TOOL_MAP = {
     "sensor_control": sensor_control,
     "media_generation": media_generation,
     "control_servo": control_servo,
+    "collapse_hud": collapse_hud,
+    "expand_hud": expand_hud,
     "todo_control": None,
     "memory_control": None,
     "skill_control": None,
@@ -4018,13 +3982,6 @@ TOOL_MAP = {
     "node_list": None,
     "capture_camera": capture_camera,
     "list_cameras": list_cameras,
-    "gesture_start": gesture_start,
-    "gesture_stop": gesture_stop,
-    "gesture_status": gesture_status,
-    "gesture_list_mappings": gesture_list_mappings,
-    "gesture_set_mapping": gesture_set_mapping,
-    "gesture_remove_mapping": gesture_remove_mapping,
-    "gesture_config_enabled": gesture_config_enabled,
     "clap_start": clap_start,
     "clap_stop": clap_stop,
     "clap_status": clap_status,

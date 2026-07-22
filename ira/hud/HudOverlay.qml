@@ -26,7 +26,6 @@ Window {
     property int bootPhase: 0
     property bool todoSectionVisible: false
     property bool autoDetectEnabled: true
-    property bool gesturesEnabled: true
     property bool reasoningEnabled: true
     property string reasoningLevel: "high"
     property bool autoScreenshotEnabled: true
@@ -36,13 +35,20 @@ Window {
 
     // ── INSTANT HOTSPOT RE-REGISTRATION ON STATE CHANGES ──
     onRightPanelShownChanged: { registerHotspots(); hotspotTimer.restart() }
-    onDockExpandedChanged: { registerHotspots(); hotspotTimer.restart() }
+    onDockExpandedChanged: {
+        registerHotspots()
+        hotspotTimer.restart()
+        if (typeof iraAvatar !== "undefined" && iraAvatar) {
+            iraAvatar.customX = -1
+            iraAvatar.customY = -1
+        }
+    }
     onChatPopupShownChanged: { registerHotspots(); hotspotTimer.restart() }
     onChatExpandedChanged: { registerHotspots(); hotspotTimer.restart() }
     onSearchWindowShownChanged: { registerHotspots(); hotspotTimer.restart() }
     onToolWindowShownChanged: { registerHotspots(); hotspotTimer.restart() }
     onMemoryWindowShownChanged: { registerHotspots(); hotspotTimer.restart() }
-    onLeftPanelShownChanged: { registerHotspots(); hotspotTimer.restart(); bridge.setGestureMonitorVisible(leftPanelShown); if (leftPanelShown) { activeModels = JSON.parse(bridge.getActiveModels()) } }
+    onLeftPanelShownChanged: { registerHotspots(); hotspotTimer.restart(); if (leftPanelShown) { activeModels = JSON.parse(bridge.getActiveModels()) } }
     onShowNodesChanged: { registerHotspots(); hotspotTimer.restart() }
     onAttachedImageChanged: { registerHotspots(); hotspotTimer.restart() }
     onAttachedLargeTextChanged: { registerHotspots(); hotspotTimer.restart() }
@@ -54,6 +60,52 @@ Window {
     // Called from Python via QMetaObject.invokeMethod
     function fadeOutOverlay() {}
     function fadeInOverlay() {}
+
+    function hideOverlay() {
+        dockExpanded = false
+        chatPopupShown = false
+        rightPanelShown = false
+        leftPanelShown = false
+        toolWindowShown = false
+        memoryWindowShown = false
+        searchWindowShown = false
+        phoneBridgeWindowShown = false
+        root.opacity = 0.0
+        root.visible = false
+        registerHotspots()
+    }
+
+    function showOverlay() {
+        root.visible = true
+        root.opacity = 1.0
+        dockExpanded = true
+        chatPopupShown = true
+        registerHotspots()
+    }
+
+    function collapseDockFromPython() {
+        dockExpanded = false
+        chatPopupShown = false
+        rightPanelShown = false
+        leftPanelShown = false
+        toolWindowShown = false
+        memoryWindowShown = false
+        searchWindowShown = false
+        phoneBridgeWindowShown = false
+        registerHotspots()
+        hotspotTimer.restart()
+        bridge.playSound("collapse")
+        return true
+    }
+
+    function expandDockFromPython() {
+        dockExpanded = true
+        chatPopupShown = true
+        registerHotspots()
+        hotspotTimer.restart()
+        bridge.playSound("expand")
+        return true
+    }
 
     // ── CHAT ATTACHMENTS (multi) ──────────────────
     property int maxAttachments: 12
@@ -112,6 +164,27 @@ Window {
     property string themeMainColor: "#00F5FF"
     property string themeSecColor: "#9B59F5"
     property real audioLevel: 0.0
+    property color currentMoodColor: themeMainColor
+    Behavior on currentMoodColor { ColorAnimation { duration: 500; easing.type: Easing.InOutQuad } }
+
+    onCurrentExpressionChanged: {
+        var expr = currentExpression.toLowerCase()
+        if (expr === "happy" || expr === "giggling") {
+            currentMoodColor = "#00FF88"
+        } else if (expr === "blushing") {
+            currentMoodColor = "#FF66B2"
+        } else if (expr === "sad") {
+            currentMoodColor = "#4A90E2"
+        } else if (expr === "smirking") {
+            currentMoodColor = "#B066FE"
+        } else if (expr === "shocked" || expr === "angry") {
+            currentMoodColor = "#FF3344"
+        } else if (expr === "thinking") {
+            currentMoodColor = "#FFD700"
+        } else {
+            currentMoodColor = themeMainColor
+        }
+    }
 
     function changeTheme(theme) {
         var tName = theme.toLowerCase()
@@ -122,57 +195,27 @@ Window {
         } else if (tName === "crimson" || tName === "red") {
             themeMainColor = "#FF3344"
             themeSecColor = "#FF0000"
-        } else if (tName === "green" || tName === "matrix") {
-            themeMainColor = "#00FF66"
-            themeSecColor = "#008000"
-        } else if (tName === "purple" || tName === "hermas") {
-            themeMainColor = "#D000FF"
-            themeSecColor = "#7F00FF"
+        } else if (tName === "green" || tName === "emerald" || tName === "matrix") {
+            themeMainColor = "#00FF88"
+            themeSecColor = "#0080FF"
+        } else if (tName === "purple" || tName === "violet" || tName === "synthwave") {
+            themeMainColor = "#B066FE"
+            themeSecColor = "#FF007F"
+        } else if (tName === "stealth" || tName === "monochrome") {
+            themeMainColor = "#E0E0E0"
+            themeSecColor = "#00FFFF"
         } else { // default cyan
             themeMainColor = "#00F5FF"
             themeSecColor = "#9B59F5"
         }
+        currentMoodColor = themeMainColor
     }
-
-    // ── GESTURE MIRRORING ─────────────────────────
-    property bool userSmiling: false
-    property bool userFrowning: false
-    property bool userMouthOpen: false
-    property bool userBlinking: false
-    property bool userBrowsRaised: false
-    property bool userHeadNod: false
-    property bool userHeadShake: false
-    property string userGesture: ""
-
-    // ── GESTURE CONTROL STATE (from gesture_control.py) ──
-    property bool ctrlEngaged: false      // fist-held -> real cursor control active
-    property bool ctrlArmed: false        // fist detected, confirming hold
-    property real ctrlCursorX: root.width / 2   // screen-space px
-    property real ctrlCursorY: root.height / 2
-    property string ctrlAction: "none"
-    property var ctrlTrail: []            // [{x,y,a}] normalized 0..1
-    property var ctrlBursts: []           // [{x,y,kind}] pending burst events
 
     property string stateText: "Ready"
     property color stateColor: "#00ff88"
     property string lastSentMsg: ""
     property string phaseIcon: ""
     property string phaseLabel: ""
-    property bool gesturePointerVisible: false
-    property real gesturePointerX: root.width / 2
-    property real gesturePointerY: root.height / 2
-    property bool gestureWasPinching: false
-    property bool gestureWasGrabbing: false
-    property int gestureSelectedBox: -1
-    property real gestureGrabOffsetX: 0
-    property real gestureGrabOffsetY: 0
-    property var gestureStrokes: []
-    property var gestureBoxes: []
-    property var gestureActiveStroke: []
-    property string gestureToastTitle: ""
-    property string gestureToastBody: ""
-    property bool gestureToastShown: false
-    property bool gestureMirrorX: true
 
     // ── WINDOW VISIBILITY ────────────────────────
     property bool toolWindowShown: false
@@ -333,101 +376,6 @@ Window {
         }
     }
 
-    function gestureScreenPoint(nx, ny) {
-        var sx = gestureMirrorX ? (1.0 - nx) : nx
-        return Qt.point(Math.max(0, Math.min(root.width, sx * root.width)),
-                        Math.max(0, Math.min(root.height, ny * root.height)))
-    }
-
-    function showGestureToast(title, body) {
-        gestureToastTitle = title
-        gestureToastBody = body || ""
-        gestureToastShown = true
-        gestureToastTimer.restart()
-    }
-
-    function nearestGestureBox(px, py) {
-        var best = -1
-        var bestDist = 999999
-        for (var i = 0; i < gestureBoxes.length; i++) {
-            var b = gestureBoxes[i]
-            var cx = b.x + b.w / 2
-            var cy = b.y + b.h / 2
-            var d = Math.abs(px - cx) + Math.abs(py - cy)
-            if (d < bestDist && d < 220) {
-                best = i
-                bestDist = d
-            }
-        }
-        return best
-    }
-
-    function updateGestureState(event) {
-        var p = gestureScreenPoint(event.x || 0.5, event.y || 0.5)
-        gesturePointerVisible = true
-        gesturePointerX = p.x
-        gesturePointerY = p.y
-
-        if (event.pinch) {
-            gestureActiveStroke.push({"x": p.x, "y": p.y})
-            gestureCanvas.requestPaint()
-        } else if (gestureWasPinching) {
-            if (gestureActiveStroke.length > 1) {
-                gestureStrokes.push(gestureActiveStroke)
-            }
-            gestureActiveStroke = []
-            gestureCanvas.requestPaint()
-        }
-        gestureWasPinching = !!event.pinch
-
-        if (event.grab) {
-            if (!gestureWasGrabbing) {
-                gestureSelectedBox = nearestGestureBox(p.x, p.y)
-                if (gestureSelectedBox >= 0) {
-                    var box = gestureBoxes[gestureSelectedBox]
-                    gestureGrabOffsetX = p.x - box.x
-                    gestureGrabOffsetY = p.y - box.y
-                }
-            }
-            if (gestureSelectedBox >= 0) {
-                var moved = gestureBoxes.slice()
-                moved[gestureSelectedBox] = {
-                    "x": Math.max(0, Math.min(root.width - moved[gestureSelectedBox].w, p.x - gestureGrabOffsetX)),
-                    "y": Math.max(0, Math.min(root.height - moved[gestureSelectedBox].h, p.y - gestureGrabOffsetY)),
-                    "w": moved[gestureSelectedBox].w,
-                    "h": moved[gestureSelectedBox].h
-                }
-                gestureBoxes = moved
-                gestureCanvas.requestPaint()
-            }
-        } else if (gestureWasGrabbing) {
-            gestureSelectedBox = -1
-        }
-        gestureWasGrabbing = !!event.grab
-    }
-
-    function handleGestureOverlayEvent(jsonStr) {
-        var event = JSON.parse(jsonStr)
-        if (event.kind === "state") {
-            updateGestureState(event)
-            return
-        }
-        if (event.kind === "toast") {
-            var label = event.name || "gesture"
-            var body = event.action && event.action !== "none" ? ("action: " + event.action) : "detected"
-            if (event.result && event.result.length > 0) body = event.result
-            showGestureToast(label, body)
-            if (event.name === "peace") {
-                gestureBoxes.push({"x": Math.max(20, gesturePointerX - 80), "y": Math.max(20, gesturePointerY - 50), "w": 160, "h": 100})
-                gestureCanvas.requestPaint()
-            } else if (event.name === "open_palm") {
-                gestureActiveStroke = []
-                gestureStrokes = []
-                gestureBoxes = []
-                gestureCanvas.requestPaint()
-            }
-        }
-    }
 
 
     function appendUserMessage(text, imgPath, largeTxt) {
@@ -519,8 +467,34 @@ Window {
         }
     }
 
+    function appendAgentMessage(agentName, agentArgs) {
+        chatModel.append({
+            "sender": "agent",
+            "text": "",
+            "imagePath": "",
+            "largeText": "",
+            "toolLogs": "",
+            "isThinking": true,
+            "toolName": agentName,
+            "toolArgs": agentArgs,
+            "toolResult": ""
+        })
+        chatListView.forceScrollToBottom()
+    }
+
+    function updateLastAgentResult(result) {
+        for (var i = chatModel.count - 1; i >= 0; i--) {
+            if (chatModel.get(i).sender === "agent") {
+                chatModel.setProperty(i, "toolResult", result)
+                chatModel.setProperty(i, "isThinking", false)
+                break
+            }
+        }
+    }
+
     function updateIraLogs(logText) {
-        if (chatModel.count === 0 || chatModel.get(chatModel.count - 1).sender !== "ira") {
+        var idx = findActiveIraIndex()
+        if (idx < 0) {
             chatModel.append({
                 "sender": "ira",
                 "text": "",
@@ -534,14 +508,31 @@ Window {
             })
             chatListView.forceScrollToBottom()
         } else {
-            var idx = chatModel.count - 1
             chatModel.setProperty(idx, "toolLogs", chatModel.get(idx).toolLogs + logText)
             chatModel.setProperty(idx, "isThinking", true)
         }
     }
 
+    function findActiveIraIndex() {
+        if (chatModel.count === 0) return -1;
+        // Search backwards from the end of chatModel up to the last user message
+        for (var i = chatModel.count - 1; i >= 0; i--) {
+            var item = chatModel.get(i);
+            if (item.sender === "user") {
+                // Reached user message of current turn — stop searching
+                break;
+            }
+            if (item.sender === "ira") {
+                // Found an IRA bubble in the current turn
+                return i;
+            }
+        }
+        return -1;
+    }
+
     function updateIraTextChunk(partialHtml) {
-        if (chatModel.count === 0 || chatModel.get(chatModel.count - 1).sender !== "ira") {
+        var idx = findActiveIraIndex()
+        if (idx < 0) {
             chatModel.append({
                 "sender": "ira",
                 "text": partialHtml,
@@ -555,14 +546,14 @@ Window {
             })
             chatListView.forceScrollToBottom()
         } else {
-            var idx = chatModel.count - 1
             chatModel.setProperty(idx, "text", partialHtml)
             chatModel.setProperty(idx, "isThinking", true)
         }
     }
 
     function finalizeIraMessage(responseHtml) {
-        if (chatModel.count === 0 || chatModel.get(chatModel.count - 1).sender !== "ira") {
+        var idx = findActiveIraIndex()
+        if (idx < 0) {
             chatModel.append({
                 "sender": "ira",
                 "text": responseHtml,
@@ -576,25 +567,12 @@ Window {
             })
             chatListView.forceScrollToBottom()
         } else {
-            var idx = chatModel.count - 1
-            var item = chatModel.get(idx)
-            if (item.isThinking) {
-                chatModel.setProperty(idx, "text", responseHtml)
-                chatModel.setProperty(idx, "isThinking", false)
-            } else {
-                chatModel.append({
-                    "sender": "ira",
-                    "text": responseHtml,
-                    "imagePath": "",
-                    "largeText": "",
-                    "toolLogs": "",
-                    "isThinking": false,
-                    "toolName": "",
-                    "toolArgs": "",
-                    "toolResult": ""
-                })
-                chatListView.forceScrollToBottom()
+            var currentItem = chatModel.get(idx)
+            if (!currentItem.isThinking && currentItem.text === responseHtml) {
+                return
             }
+            chatModel.setProperty(idx, "text", responseHtml)
+            chatModel.setProperty(idx, "isThinking", false)
         }
     }
 
@@ -772,14 +750,6 @@ Window {
         avatarState: root.avatarState
         mouseX: root.mouseX
         mouseY: root.mouseY
-        userSmiling: root.userSmiling
-        userFrowning: root.userFrowning
-        userMouthOpen: root.userMouthOpen
-        userBlinking: root.userBlinking
-        userBrowsRaised: root.userBrowsRaised
-        userHeadNod: root.userHeadNod
-        userHeadShake: root.userHeadShake
-        userGesture: root.userGesture
 
         MouseArea {
             id: avatarInteractiveArea
@@ -925,226 +895,6 @@ Window {
         }
     }
 
-    Canvas {
-        id: gestureCanvas
-        anchors.fill: parent
-        z: 4
-        visible: gestureStrokes.length > 0 || gestureActiveStroke.length > 0 || gestureBoxes.length > 0 || gesturePointerVisible
-        opacity: 0.95
-        onPaint: {
-            var ctx = getContext("2d")
-            ctx.clearRect(0, 0, width, height)
-            ctx.lineCap = "round"
-            ctx.lineJoin = "round"
-            ctx.shadowColor = "rgba(0, 255, 255, 0.55)"
-            ctx.shadowBlur = 14
-            ctx.strokeStyle = "rgba(0, 255, 255, 0.88)"
-            ctx.lineWidth = 4
-            function drawStroke(points) {
-                if (!points || points.length < 2) return
-                ctx.beginPath()
-                ctx.moveTo(points[0].x, points[0].y)
-                for (var i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y)
-                ctx.stroke()
-            }
-            for (var s = 0; s < gestureStrokes.length; s++) drawStroke(gestureStrokes[s])
-            drawStroke(gestureActiveStroke)
-            ctx.shadowBlur = 18
-            for (var b = 0; b < gestureBoxes.length; b++) {
-                var box = gestureBoxes[b]
-                ctx.strokeStyle = b === gestureSelectedBox ? "rgba(0, 255, 136, 0.95)" : "rgba(0, 180, 255, 0.85)"
-                ctx.lineWidth = 2
-                ctx.strokeRect(box.x, box.y, box.w, box.h)
-                ctx.fillStyle = "rgba(0, 40, 60, 0.16)"
-                ctx.fillRect(box.x, box.y, box.w, box.h)
-            }
-        }
-    }
-
-    // ═══════════════════════════════════════════════
-    //  GESTURE CONTROL — comet trail + engage ring + burst FX
-    //  (driven by gestureControlState from gesture_control.py)
-    // ═══════════════════════════════════════════════
-    Canvas {
-        id: ctrlTrailCanvas
-        anchors.fill: parent
-        z: 44
-        // Visible whenever we have a trail OR a live pointer
-        visible: gesturePointerVisible && (ctrlTrail.length > 0 || ctrlEngaged)
-        onPaint: {
-            var ctx = getContext("2d")
-            ctx.reset()
-            ctx.clearRect(0, 0, width, height)
-            var pts = ctrlTrail
-            if (pts.length < 2) return
-            ctx.lineCap = "round"
-            ctx.lineJoin = "round"
-
-            // Glow underlay — thick translucent, theme main color
-            for (var i = 1; i < pts.length; i++) {
-                var p0 = pts[i - 1], p1 = pts[i]
-                var a = (p1.a + p0.a) * 0.5
-                ctx.strokeStyle = Qt.rgba(0.0, 0.96, 1.0, a * 0.25)
-                ctx.lineWidth = 18 * a + 4
-                ctx.beginPath()
-                ctx.moveTo(p0.x * width, p0.y * height)
-                ctx.lineTo(p1.x * width, p1.y * height)
-                ctx.stroke()
-            }
-            // Crisp core — tapering width by age, like a comet tail
-            for (var j = 1; j < pts.length; j++) {
-                var q0 = pts[j - 1], q1 = pts[j]
-                var ag = (q1.a + q0.a) * 0.5
-                ctx.strokeStyle = Qt.rgba(1.0, 1.0, 1.0, ag)
-                ctx.lineWidth = 5 * ag + 1
-                ctx.beginPath()
-                ctx.moveTo(q0.x * width, q0.y * height)
-                ctx.lineTo(q1.x * width, q1.y * height)
-                ctx.stroke()
-            }
-        }
-        // Repaint whenever the trail or engage changes
-        Connections {
-            target: root
-            function onCtrlTrailChanged() { ctrlTrailCanvas.requestPaint() }
-        }
-    }
-
-    // Burst layer — radial particle explosions on click / engage
-    Repeater {
-        id: ctrlBurstLayer
-        model: ctrlBursts
-        delegate: Item {
-            // Each burst spawns 8 particles around its center.
-            property real bx: modelData.x * root.width
-            property real by: modelData.y * root.height
-            property string bkind: modelData.kind || "click"
-            x: bx; y: by; z: 46
-            Repeater {
-                model: 8
-                Rectangle {
-                    property real ang: index * (Math.PI / 4)
-                    property real dist: 0
-                    width: 8; height: 8; radius: 4
-                    color: bkind === "engage" ? root.themeSecColor : root.themeMainColor
-                    x: Math.cos(ang) * dist - width / 2
-                    y: Math.sin(ang) * dist - height / 2
-                    opacity: 1.0
-                    SequentialAnimation on dist {
-                        running: true
-                        NumberAnimation { from: 6; to: 54; duration: 300; easing.type: Easing.OutCubic }
-                        NumberAnimation { from: 54; to: 70; duration: 200; easing.type: Easing.OutQuad }
-                    }
-                    SequentialAnimation on opacity {
-                        running: true
-                        NumberAnimation { from: 1.0; to: 0.0; duration: 480; easing.type: Easing.OutQuad }
-                    }
-                }
-            }
-        }
-    }
-
-    // Engage ring — dual neon pulsing ring around the fingertip when ENGAGED,
-    // small armed dot while fist is being confirmed.
-    Item {
-        id: ctrlEngageRing
-        x: ctrlCursorX; y: ctrlCursorY
-        z: 45
-        visible: gesturePointerVisible && (ctrlEngaged || ctrlArmed)
-        // Outer pulsing ring (theme main color)
-        Rectangle {
-            anchors.centerIn: parent
-            width: ctrlEngaged ? 46 : 20; height: width; radius: width / 2
-            color: "transparent"
-            border.color: ctrlEngaged ? root.themeMainColor : Qt.rgba(1, 1, 1, 0.35)
-            border.width: ctrlEngaged ? 3 : 2
-            opacity: ctrlEngaged ? 1.0 : 0.6
-            SequentialAnimation on scale {
-                running: ctrlEngaged; loops: Animation.Infinite
-                NumberAnimation { from: 1.0; to: 1.18; duration: 480; easing.type: Easing.OutCubic }
-                NumberAnimation { from: 1.18; to: 1.0; duration: 480; easing.type: Easing.OutCubic }
-            }
-            Behavior on width { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-        }
-        // Inner counter-rotating ring (theme sec color)
-        Rectangle {
-            anchors.centerIn: parent
-            width: ctrlEngaged ? 30 : 10; height: width; radius: width / 2
-            color: "transparent"
-            border.color: ctrlEngaged ? root.themeSecColor : "transparent"
-            border.width: ctrlEngaged ? 2 : 0
-            opacity: ctrlEngaged ? 0.9 : 0
-            SequentialAnimation on scale {
-                running: ctrlEngaged; loops: Animation.Infinite
-                NumberAnimation { from: 1.2; to: 0.82; duration: 600; easing.type: Easing.OutCubic }
-                NumberAnimation { from: 0.82; to: 1.2; duration: 600; easing.type: Easing.OutCubic }
-            }
-            Behavior on opacity { NumberAnimation { duration: 120 } }
-        }
-        // Center dot — always visible while pointer is live
-        Rectangle {
-            anchors.centerIn: parent
-            width: 5; height: 5; radius: 2.5
-            color: ctrlEngaged ? "#FFFFFF" : root.themeMainColor
-        }
-    }
-
-    Rectangle {
-        id: gestureReticle
-        width: gestureWasPinching ? 34 : 24
-        height: width
-        radius: width / 2
-        x: gesturePointerX - width / 2
-        y: gesturePointerY - height / 2
-        z: 45
-        visible: gesturePointerVisible
-        color: "transparent"
-        border.width: gestureWasPinching ? 3 : 2
-        border.color: gestureWasPinching ? "#00FF88" : "#00FFFF"
-        opacity: 0.9
-        Rectangle {
-            anchors.centerIn: parent
-            width: 4
-            height: 4
-            radius: 2
-            color: parent.border.color
-        }
-    }
-
-    Rectangle {
-        id: gestureToast
-        width: Math.min(360, root.width - 40)
-        height: 58
-        radius: 10
-        x: root.width / 2 - width / 2
-        y: 48
-        z: 60
-        visible: gestureToastShown
-        opacity: gestureToastShown ? 1 : 0
-        color: Qt.rgba(0.0, 0.04, 0.08, 0.88)
-        border.color: Qt.rgba(0.0, 1.0, 1.0, 0.42)
-        border.width: 1
-        Column {
-            anchors.fill: parent
-            anchors.margins: 10
-            spacing: 3
-            Text {
-                width: parent.width
-                text: gestureToastTitle
-                color: "#00FFFF"
-                font { family: "Consolas"; pixelSize: 14; bold: true }
-                elide: Text.ElideRight
-            }
-            Text {
-                width: parent.width
-                text: gestureToastBody
-                color: Qt.rgba(1, 1, 1, 0.78)
-                font { family: "Segoe UI"; pixelSize: 12 }
-                elide: Text.ElideRight
-            }
-        }
-        Behavior on opacity { NumberAnimation { duration: 160 } }
-    }
 
     // ═══════════════════════════════════════════════
     //  CLICK-OUTSIDE OVERLAY — closes chat/sidebar
@@ -1274,86 +1024,7 @@ Window {
                 }
             }
 
-            // 2. CAMERA & GESTURE STATUS (Lower Section)
-            Rectangle { Layout.fillWidth: true; height: 1; color: Qt.rgba(0, 1, 1, 0.08) }
 
-            Text {
-                text: "GESTURE CAMERA VIEW"
-                color: Qt.rgba(0, 1, 0.5, 0.35)
-                font { pixelSize: 7; family: "Consolas"; bold: true; letterSpacing: 1.5 }
-            }
-
-            Rectangle {
-                Layout.fillWidth: true; Layout.preferredHeight: 140
-                color: Qt.rgba(0, 0, 0, 0.4)
-                border.color: Qt.rgba(0, 1, 1, 0.1); border.width: 1
-                radius: 8
-                clip: true
-
-                Image {
-                    id: leftCameraPreview
-                    anchors.fill: parent; anchors.margins: 2
-                    fillMode: Image.PreserveAspectFit
-                    source: cameraFrameBase64.length > 0 ? "data:image/jpeg;base64," + cameraFrameBase64 : ""
-                    visible: cameraFrameBase64.length > 0
-                }
-
-                Column {
-                    anchors.centerIn: parent
-                    visible: cameraFrameBase64.length === 0
-                    spacing: 4
-                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: "📷"; font.pixelSize: 22; opacity: 0.2 }
-                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Camera feed waiting..."; color: Qt.rgba(0, 1, 1, 0.15); font { pixelSize: 8; family: "Consolas" } }
-                }
-
-                // Camera status dot
-                Rectangle {
-                    anchors { top: parent.top; right: parent.right; margins: 6 }
-                    width: 6; height: 6; radius: 3
-                    color: cameraFrameBase64.length > 0 ? "#00FF88" : "#FF4444"
-                }
-            }
-
-            // 3. GESTURE CONTROLS
-            RowLayout {
-                Layout.fillWidth: true; Layout.preferredHeight: 24
-                spacing: 8
-
-                Text {
-                    text: "GESTURE ENGINE"
-                    color: Qt.rgba(0, 1, 1, 0.4)
-                    font { pixelSize: 8; family: "Consolas" }
-                    Layout.fillWidth: true
-                }
-
-                Rectangle {
-                    width: 32; height: 16; radius: 8
-                    color: gesturesEnabled ? "#00FF88" : "#333"
-                    border.color: Qt.rgba(0, 1, 1, 0.15); border.width: 1
-
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: {
-                            gesturesEnabled = !gesturesEnabled
-                            var settings = JSON.parse(bridge.getSettings())
-                            if (!settings.gestures) settings.gestures = {}
-                            settings.gestures.enabled = gesturesEnabled
-                            bridge.saveSettings(JSON.stringify(settings))
-                            if (gesturesEnabled) {
-                                bridge.runCommandAsync("python gesture_control.py")
-                            } else {
-                                bridge.runCommandAsync("taskkill /f /im python.exe /fi \"windowtitle eq gesture_control*\"")
-                            }
-                        }
-                    }
-                    Rectangle {
-                        x: gesturesEnabled ? 17 : 1
-                        width: 14; height: 14; radius: 7
-                        color: "white"
-                        Behavior on x { NumberAnimation { duration: 120 } }
-                    }
-                }
-            }
 
             // 4. ACTIVE AI MODELS
             Rectangle { Layout.fillWidth: true; height: 1; color: Qt.rgba(0, 1, 1, 0.08) }
@@ -1488,39 +1159,136 @@ Window {
                 width: parent.width
                 spacing: 10
 
-                // ── SYSTEM STATUS ──
+                // ── SYSTEM STATUS (Radial Arc Reactor Gauges) ──
                 Rectangle {
-                    Layout.fillWidth: true; height: 72; radius: 8
-                    color: Qt.rgba(0, 0, 0, 0.25)
-                    border.color: Qt.rgba(0, 1, 1, 0.1); border.width: 1
+                    Layout.fillWidth: true; height: 95; radius: 10
+                    color: Qt.rgba(0.02, 0.04, 0.08, 0.6)
+                    border.color: Qt.rgba(0, 1, 1, 0.18); border.width: 1
 
                     ColumnLayout {
                         anchors { fill: parent; margins: 8 }
-                        spacing: 4
+                        spacing: 6
 
-                        Text {
-                            text: "SYSTEM STATUS"
-                            color: Qt.rgba(0, 1, 1, 0.35)
-                            font { pixelSize: 7; family: "Consolas"; bold: true; letterSpacing: 2 }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text {
+                                text: "SYSTEM DIAGNOSTICS"
+                                color: root.currentMoodColor
+                                font { pixelSize: 8; family: "Consolas"; bold: true; letterSpacing: 2 }
+                            }
+                            Item { Layout.fillWidth: true }
+                            Text {
+                                text: "LIVE"
+                                color: "#00FF88"
+                                font { pixelSize: 7; family: "Consolas"; bold: true }
+                            }
                         }
 
                         RowLayout {
-                            spacing: 10
-                            ColumnLayout {
-                                spacing: 1
-                                Text { text: "CPU"; color: Qt.rgba(0, 1, 1, 0.25); font { pixelSize: 7; family: "Consolas" } }
-                                Text { text: cpuVal.toFixed(0) + "%"; color: cpuVal > 80 ? "#FF4444" : "#0080FF"; font { pixelSize: 11; family: "Consolas"; bold: true } }
+                            Layout.alignment: Qt.AlignHCenter
+                            spacing: 16
+
+                            // CPU Radial Gauge
+                            Item {
+                                width: 48; height: 48
+                                Canvas {
+                                    id: cpuArcCanvas
+                                    anchors.fill: parent
+                                    onPaint: {
+                                        var ctx = getContext("2d")
+                                        ctx.reset()
+                                        var cx = width / 2, cy = height / 2, r = 18
+                                        ctx.beginPath()
+                                        ctx.arc(cx, cy, r, 0, 2 * Math.PI)
+                                        ctx.lineWidth = 3
+                                        ctx.strokeStyle = Qt.rgba(0, 1, 1, 0.1)
+                                        ctx.stroke()
+                                        ctx.beginPath()
+                                        var val = Math.min(1.0, Math.max(0, root.cpuVal / 100))
+                                        ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + (val * 2 * Math.PI))
+                                        ctx.lineWidth = 3.5
+                                        ctx.strokeStyle = root.cpuVal > 80 ? "#FF4444" : root.currentMoodColor
+                                        ctx.stroke()
+                                    }
+                                    Connections {
+                                        target: root
+                                        function onCpuValChanged() { cpuArcCanvas.requestPaint() }
+                                    }
+                                }
+                                Column {
+                                    anchors.centerIn: parent
+                                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: "CPU"; color: Qt.rgba(0, 1, 1, 0.4); font { pixelSize: 7; family: "Consolas" } }
+                                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: cpuVal.toFixed(0) + "%"; color: root.cpuVal > 80 ? "#FF4444" : "#FFFFFF"; font { pixelSize: 10; family: "Consolas"; bold: true } }
+                                }
                             }
-                            ColumnLayout {
-                                spacing: 1
-                                Text { text: "RAM"; color: Qt.rgba(0, 1, 1, 0.25); font { pixelSize: 7; family: "Consolas" } }
-                                Text { text: ramVal.toFixed(0) + "%"; color: Qt.rgba(0, 1, 1, 0.55); font { pixelSize: 11; family: "Consolas"; bold: true } }
+
+                            // RAM Radial Gauge
+                            Item {
+                                width: 48; height: 48
+                                Canvas {
+                                    id: ramArcCanvas
+                                    anchors.fill: parent
+                                    onPaint: {
+                                        var ctx = getContext("2d")
+                                        ctx.reset()
+                                        var cx = width / 2, cy = height / 2, r = 18
+                                        ctx.beginPath()
+                                        ctx.arc(cx, cy, r, 0, 2 * Math.PI)
+                                        ctx.lineWidth = 3
+                                        ctx.strokeStyle = Qt.rgba(0, 1, 1, 0.1)
+                                        ctx.stroke()
+                                        ctx.beginPath()
+                                        var val = Math.min(1.0, Math.max(0, root.ramVal / 100))
+                                        ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + (val * 2 * Math.PI))
+                                        ctx.lineWidth = 3.5
+                                        ctx.strokeStyle = root.ramVal > 85 ? "#FF4444" : "#B066FE"
+                                        ctx.stroke()
+                                    }
+                                    Connections {
+                                        target: root
+                                        function onRamValChanged() { ramArcCanvas.requestPaint() }
+                                    }
+                                }
+                                Column {
+                                    anchors.centerIn: parent
+                                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: "RAM"; color: Qt.rgba(0, 1, 1, 0.4); font { pixelSize: 7; family: "Consolas" } }
+                                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: ramVal.toFixed(0) + "%"; color: "#FFFFFF"; font { pixelSize: 10; family: "Consolas"; bold: true } }
+                                }
                             }
-                            ColumnLayout {
-                                spacing: 1
+
+                            // BAT Radial Gauge
+                            Item {
+                                width: 48; height: 48
                                 visible: batVal > 0
-                                Text { text: "BAT"; color: Qt.rgba(0, 1, 1, 0.25); font { pixelSize: 7; family: "Consolas" } }
-                                Text { text: batVal.toFixed(0) + "%" + (isCharging ? " ⚡" : ""); color: Qt.rgba(0, 1, 1, 0.55); font { pixelSize: 11; family: "Consolas"; bold: true } }
+                                Canvas {
+                                    id: batArcCanvas
+                                    anchors.fill: parent
+                                    onPaint: {
+                                        var ctx = getContext("2d")
+                                        ctx.reset()
+                                        var cx = width / 2, cy = height / 2, r = 18
+                                        ctx.beginPath()
+                                        ctx.arc(cx, cy, r, 0, 2 * Math.PI)
+                                        ctx.lineWidth = 3
+                                        ctx.strokeStyle = Qt.rgba(0, 1, 1, 0.1)
+                                        ctx.stroke()
+                                        ctx.beginPath()
+                                        var val = Math.min(1.0, Math.max(0, root.batVal / 100))
+                                        ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + (val * 2 * Math.PI))
+                                        ctx.lineWidth = 3.5
+                                        ctx.strokeStyle = isCharging ? "#00FF88" : "#00FFFF"
+                                        ctx.stroke()
+                                    }
+                                    Connections {
+                                        target: root
+                                        function onBatValChanged() { batArcCanvas.requestPaint() }
+                                    }
+                                }
+                                Column {
+                                    anchors.centerIn: parent
+                                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: "BAT"; color: Qt.rgba(0, 1, 1, 0.4); font { pixelSize: 7; family: "Consolas" } }
+                                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: batVal.toFixed(0) + "%"; color: "#FFFFFF"; font { pixelSize: 10; family: "Consolas"; bold: true } }
+                                }
                             }
                         }
                     }
@@ -1600,36 +1368,6 @@ Window {
                             }
                         }
 
-                        // Gestures toggle
-                        RowLayout {
-                            spacing: 8
-                            Layout.fillWidth: true
-                            Text { text: "Gestures (Hand/Face)"; color: Qt.rgba(0, 1, 1, 0.4); font { pixelSize: 8; family: "Consolas" } }
-                            Item { Layout.fillWidth: true }
-                            Rectangle {
-                                width: 36; height: 18; radius: 9
-                                color: gesturesEnabled ? "#00ff88" : "#333"
-                                border.color: Qt.rgba(0, 1, 1, 0.15); border.width: 1
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    onClicked: {
-                                        gesturesEnabled = !gesturesEnabled
-                                        // Save settings via bridge
-                                        var settings = JSON.parse(bridge.getSettings())
-                                        if (!settings.gestures) settings.gestures = {}
-                                        settings.gestures.enabled = gesturesEnabled
-                                        bridge.saveSettings(JSON.stringify(settings))
-                                    }
-                                }
-                                Rectangle {
-                                    x: gesturesEnabled ? 19 : 1
-                                    width: 16; height: 16; radius: 8
-                                    color: "white"
-                                    Behavior on x { NumberAnimation { duration: 150 } }
-                                }
-                            }
-                        }
 
                         // Auto-screenshot toggle
                         RowLayout {
@@ -2151,7 +1889,8 @@ Window {
         height: chatPopupShown ? chatH : 0
         radius: 18
         color: Qt.rgba(0, 0.03, 0.07, 0.88)
-        border.color: Qt.rgba(0, 1, 1, 0.22); border.width: 1.5
+        border.color: root.currentMoodColor; border.width: 1.5
+        Behavior on border.color { ColorAnimation { duration: 400 } }
         clip: true
         visible: chatPopupShown && dockExpanded && height > 0
         z: 18
@@ -2262,11 +2001,12 @@ Window {
             delegate: Item {
                 id: delegateItem
                 width: chatListView.width
-                height: (isThinking ? thinkBubble.height : (isTool ? toolBubble.height : bubble.height)) + 4
+                height: (isThinking ? thinkBubble.height : (isTool ? toolBubble.height : (isAgent ? agentBubble.height : bubble.height))) + 4
 
                 readonly property bool isUser: model.sender === "user"
                 readonly property bool isThinking: model.sender === "thinking"
                 readonly property bool isTool: model.sender === "tool"
+                readonly property bool isAgent: model.sender === "agent"
                 property bool collapsed: false
 
                 Behavior on height { NumberAnimation { duration: 220; easing.type: Easing.InOutQuad } }
@@ -2454,10 +2194,152 @@ Window {
                     Behavior on height { NumberAnimation { duration: 200; easing.type: Easing.InOutQuad } }
                 }
 
+                // ═══ AGENT BUBBLE (PURPLE DABBA) ═══
+                Rectangle {
+                    id: agentBubble
+                    visible: isAgent
+                    anchors.left: parent.left
+                    anchors.leftMargin: 8
+                    width: Math.min(chatListView.width * 0.85, Math.max(220, agentContent.implicitWidth + 24))
+                    height: agentContent.implicitHeight + 16
+                    radius: 10
+                    color: Qt.rgba(0.12, 0.04, 0.22, 0.75)
+                    border.color: model.toolResult === "" ? "#B066FE" : Qt.rgba(0.7, 0.35, 1.0, 0.4)
+                    border.width: 1
+
+                    // Holographic Energy Ripple Animation when running
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: parent.radius
+                        color: "transparent"
+                        border.color: "#B066FE"
+                        border.width: 1.5
+                        opacity: model.toolResult === "" ? 0.6 : 0.0
+
+                        SequentialAnimation on opacity {
+                            running: agentBubble.visible && model.toolResult === ""
+                            loops: Animation.Infinite
+                            NumberAnimation { from: 0.2; to: 0.8; duration: 600; easing.type: Easing.InOutSine }
+                            NumberAnimation { from: 0.8; to: 0.2; duration: 600; easing.type: Easing.InOutSine }
+                        }
+                    }
+
+                    // Ghost Code Matrix Background Stream
+                    Item {
+                        anchors.fill: parent
+                        clip: true
+                        opacity: 0.12
+                        Text {
+                            text: "01001011 SUBAGENT_CORE // EXEC_NODE // RUNNING\n10110001 MEMORY_SYNC // PARALLEL_PROCESS\n00110110 REASONING_ENGINE // MATRIX_FLOW"
+                            color: "#B066FE"
+                            font { family: "Consolas"; pixelSize: 8 }
+                            y: matrixY
+                            property real matrixY: 0
+                            SequentialAnimation on matrixY {
+                                running: agentBubble.visible
+                                loops: Animation.Infinite
+                                NumberAnimation { from: 0; to: -16; duration: 3000 }
+                            }
+                        }
+                    }
+
+                    ColumnLayout {
+                        id: agentContent
+                        anchors { fill: parent; margins: 10 }
+                        spacing: 4
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+                            Rectangle {
+                                width: 16; height: 16; radius: 4
+                                color: Qt.rgba(0.7, 0.35, 1.0, 0.25)
+                                Text { anchors.centerIn: parent; text: "🤖"; font.pixelSize: 10 }
+                            }
+                            Text {
+                                text: model.toolName !== "" ? model.toolName : "AGENT SYSTEM"
+                                color: "#D8B4F8"
+                                font { pixelSize: 10; family: "Consolas"; bold: true }
+                            }
+                            Item { Layout.fillWidth: true }
+                            Text {
+                                text: collapsed ? "▶" : "▼"
+                                color: Qt.rgba(0.7, 0.35, 1.0, 0.5)
+                                font { pixelSize: 8 }
+                            }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            visible: !collapsed && model.toolArgs !== ""
+                            text: model.toolArgs
+                            color: "#C4A5FA"
+                            font { pixelSize: 9; family: "Consolas" }
+                            wrapMode: Text.WordWrap
+                            maximumLineCount: 8
+                            elide: Text.ElideRight
+                            textFormat: Text.PlainText
+                        }
+
+                        // Agent result / completion output (when available)
+                        Rectangle {
+                            Layout.fillWidth: true
+                            visible: !collapsed && model.toolResult !== ""
+                            height: agentResultText.implicitHeight + 12
+                            radius: 6
+                            color: Qt.rgba(0.20, 0.08, 0.35, 0.5)
+                            border.color: Qt.rgba(0.75, 0.4, 1.0, 0.25)
+                            border.width: 1
+
+                            Text {
+                                id: agentResultText
+                                anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; margins: 6 }
+                                text: "✓ " + model.toolResult
+                                color: "#E9D5FF"
+                                font { pixelSize: 9; family: "Consolas" }
+                                wrapMode: Text.WordWrap
+                                maximumLineCount: 10
+                                elide: Text.ElideRight
+                                textFormat: Text.PlainText
+                            }
+                        }
+
+                        // Loading / thinking indicator when agent is still executing
+                        RowLayout {
+                            visible: !collapsed && model.toolResult === ""
+                            spacing: 4
+                            Rectangle {
+                                width: 4; height: 4; radius: 2; color: "#B066FE"
+                                SequentialAnimation on opacity {
+                                    running: true; loops: Animation.Infinite
+                                    NumberAnimation { from: 0.3; to: 1.0; duration: 400 }
+                                    NumberAnimation { from: 1.0; to: 0.3; duration: 400 }
+                                }
+                            }
+                            Text {
+                                text: "agent running..."
+                                color: Qt.rgba(0.8, 0.5, 1.0, 0.7)
+                                font { pixelSize: 8; family: "Consolas"; italic: true }
+                            }
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            collapsed = !collapsed
+                            bridge.playSound(collapsed ? "collapse" : "expand")
+                        }
+                    }
+
+                    Behavior on height { NumberAnimation { duration: 200; easing.type: Easing.InOutQuad } }
+                }
+
                 // ═══ USER / IRA BUBBLE (original) ═══
                 Rectangle {
                     id: bubble
-                    visible: !isThinking && !isTool
+                    visible: !isThinking && !isTool && !isAgent
 
                     property string msgImagePath: (model && model.imagePath !== undefined) ? model.imagePath : ""
                     property string msgLargeText: (model && model.largeText !== undefined) ? model.largeText : ""
@@ -2955,7 +2837,7 @@ Window {
         width: chatW
         height: dockH; radius: 18
         color: (inputField.activeFocus && root.active) ? Qt.rgba(0, 0.04, 0.09, 0.94) : Qt.rgba(0, 0.024, 0.059, 0.82)
-        border.color: (inputField.activeFocus && root.active) ? "#00FFFF" : Qt.rgba(0, 1, 1, 0.22)
+        border.color: (inputField.activeFocus && root.active) ? root.currentMoodColor : Qt.rgba(root.currentMoodColor.r, root.currentMoodColor.g, root.currentMoodColor.b, 0.4)
         border.width: (inputField.activeFocus && root.active) ? 2.0 : 1.5
         visible: dockExpanded; z: 20
         opacity: isBooting ? 0 : 1.0
@@ -3325,15 +3207,20 @@ Window {
         Behavior on scale {
             NumberAnimation { duration: 500; easing.type: Easing.OutElastic; easing.amplitude: 1.0; easing.period: 0.5 }
         }
-        Behavior on opacity { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
 
         RowLayout {
             anchors.centerIn: parent; spacing: 5
             Rectangle { width: 5; height: 5; radius: 3; color: stateColor }
-            Text { text: "IRA"; color: "#00FFFF"; font { pixelSize: 10; family: "Consolas"; bold: true; letterSpacing: 1 } }
-            Text { text: "▲"; color: Qt.rgba(0, 1, 1, 0.35); font.pixelSize: 8 }
+            Text { text: isVoiceMode ? "VOICE LIVE" : "IRA HUD"; color: root.currentMoodColor; font { pixelSize: 9; family: "Consolas"; bold: true } }
         }
-        MouseArea { id: dockPillMa; anchors.fill: parent; hoverEnabled: true; onClicked: { activateWindow(); dockExpanded = true; registerHotspots(); hotspotTimer.start(); bridge.playSound("expand") } }
+
+        MouseArea {
+            id: dockPillMa
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: { activateWindow(); dockExpanded = true; chatPopupShown = true; registerHotspots(); hotspotTimer.start(); bridge.playSound("expand") }
+        }
 
         ToolTip {
             id: ttPill
@@ -3344,6 +3231,32 @@ Window {
             x: parent.width / 2 - width / 2
             contentItem: Text { text: ttPill.text; color: "#00FFFF"; font { family: "Consolas"; pixelSize: 9; bold: true } }
             background: Rectangle { color: Qt.rgba(0.02, 0.03, 0.05, 0.95); border.color: Qt.rgba(0, 0.96, 1, 0.3); border.width: 1; radius: 4 }
+        }
+    }
+
+    // ═══════════════════════════════════════════════
+    //  BOTTOM EDGE AUDIO SPECTRUM VISUALIZER (Zero Overlap)
+    // ═══════════════════════════════════════════════
+    Row {
+        id: bottomEdgeSpectrum
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 6
+        spacing: 4
+        z: 30
+        visible: root.audioLevel > 0.01 || root.isVoiceMode
+
+        Repeater {
+            model: 15
+            Rectangle {
+                width: 4
+                height: Math.max(3, Math.min(28, (root.audioLevel * 90) * (index % 2 === 0 ? 1.3 : 0.7) + (Math.sin(index * 1.3) * 4)))
+                radius: 2
+                color: root.currentMoodColor
+                opacity: 0.9
+                Behavior on height { NumberAnimation { duration: 50; easing.type: Easing.OutQuad } }
+                Behavior on color { ColorAnimation { duration: 300 } }
+            }
         }
     }
 
@@ -3924,17 +3837,6 @@ Window {
         }
     }
 
-    // ═══════════════════════════════════════════════
-    //  GESTURE MIRRORING TIMERS — auto-reset after 1.5s
-    // ═══════════════════════════════════════════════
-    Timer { id: smileResetTimer; interval: 1500; onTriggered: root.userSmiling = false }
-    Timer { id: frownResetTimer; interval: 1500; onTriggered: root.userFrowning = false }
-    Timer { id: mouthResetTimer; interval: 1500; onTriggered: root.userMouthOpen = false }
-    Timer { id: blinkResetTimer; interval: 400; onTriggered: root.userBlinking = false }
-    Timer { id: browsResetTimer; interval: 1500; onTriggered: root.userBrowsRaised = false }
-    Timer { id: nodResetTimer; interval: 1500; onTriggered: root.userHeadNod = false }
-    Timer { id: shakeResetTimer; interval: 1500; onTriggered: root.userHeadShake = false }
-    Timer { id: gestureResetTimer; interval: 2000; onTriggered: avatarState = "idle" }
 
     // ═══════════════════════════════════════════════
     //  BRIDGE CONNECTIONS
@@ -3944,6 +3846,17 @@ Window {
 
         function onDockExpansionRequested(expanded) {
             dockExpanded = expanded
+            if (!expanded) {
+                chatPopupShown = false
+                rightPanelShown = false
+                leftPanelShown = false
+                toolWindowShown = false
+                memoryWindowShown = false
+                searchWindowShown = false
+                phoneBridgeWindowShown = false
+            } else {
+                chatPopupShown = true
+            }
             registerHotspots()
             hotspotTimer.start()
         }
@@ -4050,7 +3963,6 @@ Window {
         function onSettingsUpdated(json) {
             var settings = JSON.parse(json)
             autoDetectEnabled = settings.location.auto_detect
-            gesturesEnabled = settings.gestures ? (settings.gestures.enabled !== false) : true
             autoScreenshotEnabled = settings.screenshots ? (settings.screenshots.auto_screenshot !== false) : true
             reasoningEnabled = settings.reasoning ? (settings.reasoning.enabled !== false) : true
             reasoningLevel = settings.reasoning ? (settings.reasoning.level || "high") : "high"
@@ -4110,8 +4022,11 @@ Window {
             stateText = "Ready"
             stateColor = "#00ff88"
 
-            chatPopupShown = true
-            if (!dockExpanded) pillPulse.start()
+            if (dockExpanded) {
+                chatPopupShown = true
+            } else {
+                pillPulse.start()
+            }
 
             registerHotspots()
             hotspotTimer.start()
@@ -4151,16 +4066,26 @@ Window {
         }
 
         function onToolCalled(name, argsText, argsJson) {
-            stateText = "🔧 " + name
-            stateColor = "#00FFFF"
-            appendToolMessage(name, argsText || "")
+            if (name === "call_agent" || name === "agent" || name.indexOf("subagent") !== -1) {
+                stateText = "🤖 " + name
+                stateColor = "#D8B4F8"
+                appendAgentMessage(name, argsText || "")
+            } else {
+                stateText = "🔧 " + name
+                stateColor = "#00FFFF"
+                appendToolMessage(name, argsText || "")
+            }
             chatListView.smartScroll()
         }
 
         function onToolResult(name, result) {
             var res = stripHtml(result)
-            if (res.length > 200) res = res.substring(0, 200) + "..."
-            updateLastToolResult(res)
+            if (res.length > 300) res = res.substring(0, 300) + "..."
+            if (name === "call_agent" || name === "agent" || name.indexOf("subagent") !== -1) {
+                updateLastAgentResult(res)
+            } else {
+                updateLastToolResult(res)
+            }
         }
 
         function onErrorOccurred(msg) {
@@ -4208,88 +4133,6 @@ Window {
             hotspotTimer.start()
         }
 
-        // ── GESTURE MIRRORING ──────────────────────
-        function onGestureDetected(name, confidence) {
-            userGesture = name
-            // Hand gesture reactions — brief avatar state changes
-            if (name === "wave") {
-                avatarState = "listening"
-                gestureResetTimer.restart()
-            } else if (name === "thumbs_up") {
-                avatarState = "talking"
-                gestureResetTimer.restart()
-            } else if (name === "fist") {
-                avatarState = "thinking"
-                gestureResetTimer.restart()
-            } else if (name === "peace" || name === "rock") {
-                avatarState = "talking"
-                gestureResetTimer.restart()
-            }
-        }
-
-        function onFaceStateChanged(expression, confidence) {
-            // Face expression mirroring — avatar mimics user's face
-            if (expression === "smile") {
-                userSmiling = true
-                smileResetTimer.restart()
-            } else if (expression === "frown") {
-                userFrowning = true
-                frownResetTimer.restart()
-            } else if (expression === "open_mouth") {
-                userMouthOpen = true
-                mouthResetTimer.restart()
-            } else if (expression === "blink_both" || expression === "blink_left" || expression === "blink_right") {
-                userBlinking = true
-                blinkResetTimer.restart()
-            } else if (expression === "raise_eyebrows") {
-                userBrowsRaised = true
-                browsResetTimer.restart()
-            } else if (expression === "head_nod") {
-                userHeadNod = true
-                nodResetTimer.restart()
-            } else if (expression === "head_shake") {
-                userHeadShake = true
-                shakeResetTimer.restart()
-            }
-        }
-
-        function onGestureLogEntry(jsonStr) {
-            var entry = JSON.parse(jsonStr)
-            var msg = "[" + (entry.time || "") + "] Gesture Detected: " + (entry.name || "?") + " (conf: " + (entry.confidence || 0) + ") -> Action: " + (entry.action || "none")
-            if (root.consoleLog.length > 0) {
-                root.consoleLog += "\n" + msg
-            } else {
-                root.consoleLog = msg
-            }
-        }
-
-        function onCameraFrameUpdate(base64) {
-            cameraFrameBase64 = base64
-        }
-
-        function onGestureOverlayEvent(jsonStr) {
-            handleGestureOverlayEvent(jsonStr)
-        }
-
-        function onGestureControlState(jsonStr) {
-            var s = JSON.parse(jsonStr)
-            ctrlEngaged = !!s.engaged
-            ctrlArmed = !!s.armed
-            ctrlAction = s.action || "none"
-            // Controller already mirrors X (in hud_overlay._mirror_hand) so its
-            // cursor + trail + bursts are all in mirrored space, matching the
-            // mirrored camera preview. We just map normalized -> HUD px here.
-            var nx = s.cursor_x != null ? s.cursor_x : 0.5
-            var ny = s.cursor_y != null ? s.cursor_y : 0.5
-            ctrlCursorX = nx * root.width
-            ctrlCursorY = ny * root.height
-            ctrlTrail = s.trail || []
-            var newBursts = s.bursts || []
-            if (newBursts.length > 0) {
-                ctrlBursts = ctrlBursts.concat(newBursts)
-                burstClearTimer.restart()
-            }
-        }
 
         function onImagePasted(urlPath) {
             if (attachedImagesModel.count >= maxAttachments) return

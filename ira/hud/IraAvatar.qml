@@ -17,15 +17,6 @@ Item {
     onMainThemeColorChanged: canvas.requestPaint()
     onSecThemeColorChanged: canvas.requestPaint()
 
-    // Gesture-driven mirroring properties (set from QML)
-    property bool userSmiling: false
-    property bool userFrowning: false
-    property bool userMouthOpen: false
-    property bool userBlinking: false
-    property bool userBrowsRaised: false
-    property bool userHeadNod: false
-    property bool userHeadShake: false
-    property string userGesture: ""  // last detected hand gesture name
 
     Canvas {
         id: canvas

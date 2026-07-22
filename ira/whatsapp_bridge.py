@@ -147,9 +147,10 @@ def _ensure_network_access(port: int) -> None:
 
         def _netsh_rule_exists(name: str) -> bool:
             try:
+                flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
                 r = subprocess.run(
                     ["netsh", "advfirewall", "firewall", "show", "rule", f"name={name}"],
-                    capture_output=True, text=True, timeout=5,
+                    capture_output=True, text=True, timeout=5, creationflags=flags
                 )
                 return r.returncode == 0 and "No rules match" not in r.stdout
             except Exception:
@@ -157,12 +158,13 @@ def _ensure_network_access(port: int) -> None:
 
         def _network_is_public() -> bool:
             try:
+                flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
                 r = subprocess.run(
                     ["powershell", "-NoProfile", "-NonInteractive", "-Command",
                      "(Get-NetConnectionProfile | "
                      "Where-Object {$_.NetworkCategory -eq 'Public'} | "
                      "Measure-Object).Count"],
-                    capture_output=True, text=True, timeout=6,
+                    capture_output=True, text=True, timeout=6, creationflags=flags
                 )
                 return r.stdout.strip() not in ("", "0")
             except Exception:

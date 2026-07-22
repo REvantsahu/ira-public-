@@ -31,12 +31,6 @@ DEFAULT_SETTINGS = {
         "auto_open": True,
         "default_zoom": 14,
     },
-    "gestures": {
-        "enabled": False,
-        "system_control": True,   # real OS cursor control (fist engage / pinch click / palm scroll)
-        "smoothing": 0.7,         # 0 = raw, 1 = very smooth (tunes One Euro min_cutoff)
-        "skeleton": True,         # draw neon hand skeleton on camera preview
-    },
     "screenshots": {
         "auto_screenshot": True,
     },

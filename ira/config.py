@@ -6,28 +6,28 @@ load_dotenv()
 
 GEMINI_KEYS = [k.strip() for k in os.getenv("GEMINI_API_KEY", "").split(",") if k.strip()]
 
-# Best models based on your quota (from AI Studio):
-# Gemini 3.5 Flash   = Best Flash — outperforms 3.1 Pro on coding/agentic (FREE tier)
-# Gemini 3.1 Flash-Lite = Cost-efficient, fast (FREE tier)
-# Gemini 3 Flash     = Still available, good fallback (FREE tier)
-# Gemini 3.1 Pro     = Best reasoning, but NO free tier
-# Gemini 2.5 Flash   = Legacy, shutting down Oct 2026 (FREE tier)
-# Computer Use       = 10K RPD, 150 RPM (screen control!)
+# Best models based on your API Key quota:
+# Gemini 3.6 Flash     = Top Tier — newest 3.6 Flash model (FREE tier)
+# Gemini 3.5 Flash     = High performance 3.5 Flash (FREE tier)
+# Gemini 3.5 Flash-Lite= Fast, ultra-efficient 3.5 Flash Lite (FREE tier)
+# Gemini 3.1 Flash-Lite= Reliable fallback (FREE tier)
+# Gemini 3 Flash       = Preview fallback (FREE tier)
+# Gemini 2.5 Flash-Lite= Fast legacy fallback
+# Gemini 2.5 Flash     = Legacy fallback
 
-MODEL = "gemini-3.5-flash"
+MODEL = "gemini-3.6-flash"
 LIVE_AUDIO_MODEL = "gemini-3.1-flash-live-preview"
 MODELS_FALLBACK = [
-    "gemini-3.5-flash",                  # Primary — best Flash, free tier
-    "gemini-3.1-flash-lite",             # Fast & cheap fallback
-    "gemini-3-flash-preview",            # Still available
-    "gemini-2.5-flash",                  # Legacy fallback — shutting down Oct 2026
+    "gemini-3.6-flash",                  # Top Tier — newest 3.6 Flash model
+    "gemini-3.5-flash",                  # High performance 3.5 Flash model
+    "gemini-3.5-flash-lite",             # Fast & efficient 3.5 Flash Lite model
+    "gemini-3.1-flash-lite",             # 3.1 Flash Lite fallback
+    "gemini-3-flash-preview",            # 3.0 Flash Preview fallback
+    "gemini-2.5-flash-lite",             # 2.5 Flash Lite fallback
+    "gemini-2.5-flash",                  # Legacy 2.5 Flash fallback
 ]
-VISION_MODEL = "gemini-3.5-flash"
-# Computer Use model — special model for screen control
-# Returns its own actions (open_web_browser, click, type, etc.)
-# Computer Use model — Gemini 3 Flash has built-in computer use support
-# But the dedicated 2.5 model still works for now
-COMPUTER_USE_MODEL = "gemini-3.5-flash"
+VISION_MODEL = "gemini-3.6-flash"
+COMPUTER_USE_MODEL = "gemini-3.6-flash"
 
 # ── Image Generation Fallback Chain ──
 # Primary: Nano Banana 2 (fast, pro-level)
@@ -853,25 +853,19 @@ TOOL_DECLARATIONS = [
     # === CONSOLIDATED SENSOR CONTROL ===
     {
         "name": "sensor_control",
-        "description": "Manage hand/face gesture recognition, clap activation, or webcam captures.",
+        "description": "Manage clap activation or webcam captures.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
                 "action": {
                     "type": "STRING",
                     "enum": [
-                        "gesture_start", "gesture_stop", "gesture_status", "gesture_list_mappings",
-                        "gesture_set_mapping", "gesture_remove_mapping", "gesture_config_enabled",
                         "clap_start", "clap_stop", "clap_status", "clap_set_sensitivity",
                         "camera_capture", "camera_list"
                     ],
                     "description": "Sensor operation to perform"
                 },
                 "camera_index": {"type": "INTEGER", "description": "Webcam index (default: 0)"},
-                "gesture": {"type": "STRING", "description": "Gesture name for custom mappings"},
-                "action_to_map": {"type": "STRING", "description": "Mapped IRA action (e.g. scroll_up)"},
-                "description": {"type": "STRING", "description": "Mapping description"},
-                "enabled": {"type": "BOOLEAN", "description": "Enable/disable gesture engine flag"},
                 "threshold": {"type": "NUMBER", "description": "Clap audio sensitivity threshold (default: 0.08)"}
             },
             "required": ["action"]
@@ -998,6 +992,24 @@ TOOL_DECLARATIONS = [
                 }
             },
             "required": ["angle"]
+        }
+    },
+    {
+        "name": "collapse_hud",
+        "description": "Collapses / minimizes IRA's HUD overlay interface into a compact floating pill shape on screen. ONLY call this tool when the user explicitly asks to collapse, minimize, shrink, or hide the HUD/dock.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "expand_hud",
+        "description": "Expands / opens IRA's full HUD overlay interface with dock controls on screen. ONLY call this tool when the user explicitly asks to expand, maximize, open, or show the HUD/dock.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+            "required": []
         }
     },
 ]
