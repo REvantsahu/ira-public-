@@ -320,6 +320,11 @@ class HUDBridge(QObject):
         self._last_user_speech_time = time.monotonic()
         self._last_proactive_speech_time = 0.0
 
+        # Proactive engine settings cache
+        self._proactive_settings = {}
+        self._last_proactive_settings_load = 0.0
+        self._periodic_speech_last_time = 0.0
+
         # Connect the internal hop signal to main-thread streaming slot
         self._streamReadySignal.connect(self._on_stream_ready, Qt.ConnectionType.QueuedConnection)
         
@@ -2344,6 +2349,20 @@ class HUDBridge(QObject):
         self.systemStatsUpdated.emit(json.dumps(stats))
         self._check_heartbeat()
 
+    def _get_proactive_settings(self) -> dict:
+        """Load proactive settings from disk with 30s cache."""
+        now = time.time()
+        if now - getattr(self, "_last_proactive_settings_load", 0.0) < 30:
+            return getattr(self, "_proactive_settings", {})
+        try:
+            from settings_manager import load_settings
+            settings = load_settings()
+            self._proactive_settings = settings.get("proactive", {})
+            self._last_proactive_settings_load = now
+        except Exception:
+            pass
+        return self._proactive_settings
+
     def _run_startup_briefing(self):
         """Fetch startup welcome briefing and show it in the chat window + speak a short intro."""
         def _task():
@@ -2417,6 +2436,10 @@ class HUDBridge(QObject):
     def _check_heartbeat(self):
         """Rule-Triggered Heartbeat Engine for proactive stats alerts."""
         try:
+            proactive = self._get_proactive_settings()
+            if not proactive.get("heartbeat_enabled", True):
+                return
+
             now = time.time()
             if now - getattr(self, "_last_heartbeat_time", 0.0) < 5.0:
                 return
@@ -2898,15 +2921,24 @@ class HUDBridge(QObject):
             try:
                 from actions.proactive import ProactiveEngine
                 from memory.memory_manager import load_memory
-                engine = ProactiveEngine()
+                engine = ProactiveEngine.from_settings(self._get_proactive_settings())
                 time.sleep(15)
+                last_settings_reload = time.time()
                 while not self._stop_flag.is_set():
                     time.sleep(15)
+                    # Reload settings every 60s to pick up user changes
+                    if time.time() - last_settings_reload >= 60:
+                        last_settings_reload = time.time()
+                        engine = ProactiveEngine.from_settings(self._get_proactive_settings())
+                    proactive = self._get_proactive_settings()
+                    if not proactive.get("enabled", True):
+                        continue
                     if not self._live_session or getattr(self, "_voice_responding", False):
                         continue
-                    # Don't speak if we just spoke proactively within last 3 minutes
+                    # Don't speak if we just spoke proactively within cooldown
+                    cooldown = int(proactive.get("cooldown_minutes", 3) * 60)
                     last_proactive = getattr(self, "_last_proactive_speech_time", 0.0)
-                    if time.monotonic() - last_proactive < 180:
+                    if time.monotonic() - last_proactive < cooldown:
                         continue
                     last_speech = getattr(self, "_last_user_speech_time", time.monotonic())
                     if engine.should_trigger(last_speech):
@@ -2933,7 +2965,7 @@ class HUDBridge(QObject):
                                 calendar_events=calendar_events,
                                 overdue_items=overdue_items,
                             )
-                            print(f"[HUD Proactive] 💡 Triggering proactive speech via Live session...")
+                            print(f"[HUD Proactive] Triggering proactive speech via Live session...")
                             loop = getattr(self, "_voice_loop", None)
                             if loop and self._live_session:
                                 self._live_interrupted = False
@@ -2949,7 +2981,10 @@ class HUDBridge(QObject):
             except Exception as e:
                 print(f"[HUD Proactive] Thread error: {e}")
 
-        threading.Thread(target=_proactive_loop, daemon=True).start()
+        if self._get_proactive_settings().get("enabled", True):
+            threading.Thread(target=_proactive_loop, daemon=True).start()
+        else:
+            print("[HUD Proactive] Proactive engine disabled in settings.")
 
         # Start Calendar Scheduler — checks due events every 30s and fires proactive alerts
         def _calendar_scheduler():
@@ -2959,36 +2994,83 @@ class HUDBridge(QObject):
                 last_check = 0.0
                 while not self._stop_flag.is_set():
                     now = time.time()
-                    if now - last_check >= 30:
-                        last_check = now
-                        try:
-                            now_dt = datetime.datetime.now()
-                            upcoming = mgr.upcoming(within_hours=2)
-                            for ev in upcoming:
-                                occ_str = ev.get("occurrence_start") or ev.get("next_occurrence")
-                                if not occ_str:
-                                    continue
-                                try:
-                                    occ_dt = datetime.datetime.fromisoformat(occ_str)
-                                except ValueError:
-                                    continue
-                                diff = (occ_dt - now_dt).total_seconds()
-                                if 0 < diff <= 600:
-                                    title = ev.get("title") or ev.get("message") or "Event"
-                                    etype = ev.get("event_type", "reminder")
-                                    mins = int(diff // 60)
-                                    label = f"{title} ({etype}) starts in {mins} minutes"
-                                    if hasattr(self, "_last_calendar_announce") and self._last_calendar_announce == label:
+                    proactive = self._get_proactive_settings()
+                    if proactive.get("calendar_alerts_enabled", True):
+                        if now - last_check >= 30:
+                            last_check = now
+                            try:
+                                now_dt = datetime.datetime.now()
+                                upcoming = mgr.upcoming(within_hours=2)
+                                for ev in upcoming:
+                                    occ_str = ev.get("occurrence_start") or ev.get("next_occurrence")
+                                    if not occ_str:
                                         continue
-                                    self._last_calendar_announce = label
-                                    self._speak_proactive(f"Aapke {etype} '{title}' {mins} minute mein shuru hone wala hai.")
-                        except Exception as e:
-                            print(f"[Calendar Scheduler] Error: {e}")
+                                    try:
+                                        occ_dt = datetime.datetime.fromisoformat(occ_str)
+                                    except ValueError:
+                                        continue
+                                    diff = (occ_dt - now_dt).total_seconds()
+                                    if 0 < diff <= 600:
+                                        title = ev.get("title") or ev.get("message") or "Event"
+                                        etype = ev.get("event_type", "reminder")
+                                        mins = int(diff // 60)
+                                        label = f"{title} ({etype}) starts in {mins} minutes"
+                                        if hasattr(self, "_last_calendar_announce") and self._last_calendar_announce == label:
+                                            continue
+                                        self._last_calendar_announce = label
+                                        self._speak_proactive(f"Aapke {etype} '{title}' {mins} minute mein shuru hone wala hai.")
+                            except Exception as e:
+                                print(f"[Calendar Scheduler] Error: {e}")
                     time.sleep(5)
             except Exception as e:
                 print(f"[Calendar Scheduler] Thread error: {e}")
 
         threading.Thread(target=_calendar_scheduler, daemon=True).start()
+
+        # Periodic speech feature — speaks every X minutes if enabled
+        def _periodic_speech_loop():
+            try:
+                time.sleep(10)
+                while not self._stop_flag.is_set():
+                    time.sleep(30)
+                    proactive = self._get_proactive_settings()
+                    if not proactive.get("periodic_speech_enabled", False):
+                        continue
+                    if not self._live_session or getattr(self, "_voice_responding", False):
+                        continue
+                    interval = int(proactive.get("periodic_speech_interval_minutes", 1) * 60)
+                    now = time.monotonic()
+                    last = getattr(self, "_periodic_speech_last_time", 0.0)
+                    if now - last < interval:
+                        continue
+                    self._periodic_speech_last_time = now
+                    try:
+                        from datetime import datetime as _dt
+                        hour = _dt.now().hour
+                        if 6 <= hour < 12:
+                            msg = "Good morning! Just a friendly reminder that I'm here whenever you need me."
+                        elif 12 <= hour < 18:
+                            msg = "Good afternoon! Don't forget to stay hydrated and take breaks."
+                        elif 18 <= hour < 23:
+                            msg = "Good evening! How can I help you make the most of your night?"
+                        else:
+                            msg = "It's late night. Consider getting some rest, but I'm here if you need me."
+                        loop = getattr(self, "_voice_loop", None)
+                        if loop and self._live_session:
+                            self._live_interrupted = False
+                            from google.genai import types
+                            coro = self._live_session.send_client_content(
+                                turns=[types.Content(role="user", parts=[types.Part(text=msg)])],
+                                turn_complete=True
+                            )
+                            asyncio.run_coroutine_threadsafe(coro, loop)
+                    except Exception as e:
+                        print(f"[Periodic Speech] Error: {e}")
+            except Exception as e:
+                print(f"[Periodic Speech] Thread error: {e}")
+
+        if self._get_proactive_settings().get("periodic_speech_enabled", False):
+            threading.Thread(target=_periodic_speech_loop, daemon=True).start()
 
     def _scene_analyzer_loop(self):
         """Periodically analyze webcam scene using Gemini Vision to update room context."""

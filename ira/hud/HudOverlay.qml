@@ -29,6 +29,11 @@ Window {
     property bool reasoningEnabled: true
     property string reasoningLevel: "high"
     property bool autoScreenshotEnabled: true
+    property bool proactiveEnabled: true
+    property bool heartbeatEnabled: true
+    property bool calendarAlertsEnabled: true
+    property bool periodicSpeechEnabled: false
+    property int periodicSpeechInterval: 1
     property string userLocation: "Detecting..."
     property real userLat: 19.8762
     property real userLng: 75.3704
@@ -1617,6 +1622,165 @@ Window {
                                     Behavior on x { NumberAnimation { duration: 150 } }
                                 }
                             }
+                        }
+
+                        // ── PROACTIVE ENGINE SETTINGS ──
+                        Rectangle { Layout.fillWidth: true; height: 1; color: Qt.rgba(0, 1, 1, 0.06) }
+
+                        Text {
+                            text: "PROACTIVE ENGINE"
+                            color: Qt.rgba(0, 1, 1, 0.35)
+                            font { pixelSize: 7; family: "Consolas"; bold: true; letterSpacing: 2 }
+                        }
+
+                        // Master proactive toggle
+                        RowLayout {
+                            spacing: 8
+                            Layout.fillWidth: true
+                            Text { text: "🧠"; font.pixelSize: 10 }
+                            Text { text: "Proactive Mode"; color: Qt.rgba(0, 1, 1, 0.4); font { pixelSize: 8; family: "Consolas" } }
+                            Item { Layout.fillWidth: true }
+                            Rectangle {
+                                width: 36; height: 18; radius: 9
+                                color: proactiveEnabled ? "#00ff88" : "#333"
+                                border.color: Qt.rgba(0, 1, 1, 0.15); border.width: 1
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: {
+                                        proactiveEnabled = !proactiveEnabled
+                                        var settings = JSON.parse(bridge.getSettings())
+                                        if (!settings.proactive) settings.proactive = {}
+                                        settings.proactive.enabled = proactiveEnabled
+                                        bridge.saveSettings(JSON.stringify(settings))
+                                    }
+                                }
+                                Rectangle {
+                                    x: proactiveEnabled ? 19 : 1
+                                    width: 16; height: 16; radius: 8
+                                    color: "white"
+                                    Behavior on x { NumberAnimation { duration: 150 } }
+                                }
+                            }
+                        }
+
+                        // Heartbeat toggle
+                        RowLayout {
+                            spacing: 8
+                            Layout.fillWidth: true
+                            Text { text: "💓"; font.pixelSize: 10 }
+                            Text { text: "Heartbeat Alerts"; color: Qt.rgba(0, 1, 1, 0.4); font { pixelSize: 8; family: "Consolas" } }
+                            Item { Layout.fillWidth: true }
+                            Rectangle {
+                                width: 36; height: 18; radius: 9
+                                color: heartbeatEnabled ? "#00ff88" : "#333"
+                                border.color: Qt.rgba(0, 1, 1, 0.15); border.width: 1
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: {
+                                        heartbeatEnabled = !heartbeatEnabled
+                                        var settings = JSON.parse(bridge.getSettings())
+                                        if (!settings.proactive) settings.proactive = {}
+                                        settings.proactive.heartbeat_enabled = heartbeatEnabled
+                                        bridge.saveSettings(JSON.stringify(settings))
+                                    }
+                                }
+                                Rectangle {
+                                    x: heartbeatEnabled ? 19 : 1
+                                    width: 16; height: 16; radius: 8
+                                    color: "white"
+                                    Behavior on x { NumberAnimation { duration: 150 } }
+                                }
+                            }
+                        }
+
+                        // Calendar alerts toggle
+                        RowLayout {
+                            spacing: 8
+                            Layout.fillWidth: true
+                            Text { text: "📅"; font.pixelSize: 10 }
+                            Text { text: "Calendar Alerts"; color: Qt.rgba(0, 1, 1, 0.4); font { pixelSize: 8; family: "Consolas" } }
+                            Item { Layout.fillWidth: true }
+                            Rectangle {
+                                width: 36; height: 18; radius: 9
+                                color: calendarAlertsEnabled ? "#00ff88" : "#333"
+                                border.color: Qt.rgba(0, 1, 1, 0.15); border.width: 1
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: {
+                                        calendarAlertsEnabled = !calendarAlertsEnabled
+                                        var settings = JSON.parse(bridge.getSettings())
+                                        if (!settings.proactive) settings.proactive = {}
+                                        settings.proactive.calendar_alerts_enabled = calendarAlertsEnabled
+                                        bridge.saveSettings(JSON.stringify(settings))
+                                    }
+                                }
+                                Rectangle {
+                                    x: calendarAlertsEnabled ? 19 : 1
+                                    width: 16; height: 16; radius: 8
+                                    color: "white"
+                                    Behavior on x { NumberAnimation { duration: 150 } }
+                                }
+                            }
+                        }
+
+                        // Periodic speech toggle + interval
+                        RowLayout {
+                            spacing: 8
+                            Layout.fillWidth: true
+                            Text { text: "🗣"; font.pixelSize: 10 }
+                            Text { text: "Periodic Speech"; color: Qt.rgba(0, 1, 1, 0.4); font { pixelSize: 8; family: "Consolas" } }
+                            Item { Layout.fillWidth: true }
+                            Rectangle {
+                                width: 36; height: 18; radius: 9
+                                color: periodicSpeechEnabled ? "#00ff88" : "#333"
+                                border.color: Qt.rgba(0, 1, 1, 0.15); border.width: 1
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: {
+                                        periodicSpeechEnabled = !periodicSpeechEnabled
+                                        var settings = JSON.parse(bridge.getSettings())
+                                        if (!settings.proactive) settings.proactive = {}
+                                        settings.proactive.periodic_speech_enabled = periodicSpeechEnabled
+                                        bridge.saveSettings(JSON.stringify(settings))
+                                    }
+                                }
+                                Rectangle {
+                                    x: periodicSpeechEnabled ? 19 : 1
+                                    width: 16; height: 16; radius: 8
+                                    color: "white"
+                                    Behavior on x { NumberAnimation { duration: 150 } }
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            spacing: 6
+                            Layout.fillWidth: true
+                            Text { text: "Interval:"; color: Qt.rgba(0, 1, 1, 0.4); font { pixelSize: 8; family: "Consolas" } }
+                            Rectangle {
+                                Layout.preferredWidth: 40; height: 18; radius: 4
+                                color: Qt.rgba(0, 0, 0, 0.3)
+                                border.color: Qt.rgba(0, 1, 1, 0.1); border.width: 1
+                                TextInput {
+                                    id: periodicIntervalInput
+                                    anchors { fill: parent; margins: 4 }
+                                    text: periodicSpeechInterval.toString()
+                                    color: "#00d4ff"
+                                    font { pixelSize: 8; family: "Consolas" }
+                                    validator: IntValidator { bottom: 1; top: 120 }
+                                    onTextChanged: {
+                                        var val = parseInt(text, 10)
+                                        if (!isNaN(val) && val >= 1) {
+                                            periodicSpeechInterval = val
+                                            var settings = JSON.parse(bridge.getSettings())
+                                            if (!settings.proactive) settings.proactive = {}
+                                            settings.proactive.periodic_speech_interval_minutes = val
+                                            bridge.saveSettings(JSON.stringify(settings))
+                                        }
+                                    }
+                                }
+                            }
+                            Text { text: "min"; color: Qt.rgba(0, 1, 1, 0.4); font { pixelSize: 8; family: "Consolas" } }
                         }
 
                         // Create Desktop Shortcut button
@@ -4089,6 +4253,13 @@ Window {
             lngInput.text = userLng.toString()
             var theme = (settings.avatar && settings.avatar.theme) ? settings.avatar.theme : "cyan"
             root.changeTheme(theme)
+
+            var proactive = settings.proactive || {}
+            proactiveEnabled = proactive.enabled !== false
+            heartbeatEnabled = proactive.heartbeat_enabled !== false
+            calendarAlertsEnabled = proactive.calendar_alerts_enabled !== false
+            periodicSpeechEnabled = proactive.periodic_speech_enabled === true
+            periodicSpeechInterval = parseInt(proactive.periodic_speech_interval_minutes || "1", 10)
         }
 
         function onProcessingChanged(p) {

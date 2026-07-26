@@ -5,21 +5,32 @@ from datetime import datetime
 
 class ProactiveEngine:
     """
-    Decides when IRA should speak unprompted using natural randomized intervals (like a real Jarvis companion),
+    Decides when IRA should speak unprompted using configurable idle/cooldown intervals,
     and builds context-rich prompts.
     """
 
     def __init__(
         self,
-        min_silence_range: tuple[int, int] = (60, 240),  # 1 to 4 minutes randomized
-        cooldown_range: tuple[int, int] = (90, 300),      # 1.5 to 5 minutes cooldown
+        min_silence_seconds: int = 180,
+        cooldown_seconds: int = 180,
     ):
-        self.min_silence_range = min_silence_range
-        self.cooldown_range   = cooldown_range
-        self._next_silence    = random.randint(*min_silence_range)
-        self._next_cooldown   = random.randint(*cooldown_range)
-        self._last_triggered  = 0.0
-        self._rotation        = 0
+        self.min_silence_seconds = min_silence_seconds
+        self.cooldown_seconds = cooldown_seconds
+        self._next_silence = min_silence_seconds
+        self._next_cooldown = cooldown_seconds
+        self._last_triggered = 0.0
+        self._rotation = 0
+
+    @classmethod
+    def from_settings(cls, settings: dict | None = None) -> "ProactiveEngine":
+        if not settings:
+            return cls()
+        proactive = settings.get("proactive", {})
+        if not proactive.get("enabled", True):
+            return cls(min_silence_seconds=999999, cooldown_seconds=999999)
+        idle_min = int(proactive.get("idle_minutes", 3) * 60)
+        cooldown_min = int(proactive.get("cooldown_minutes", 3) * 60)
+        return cls(min_silence_seconds=idle_min, cooldown_seconds=cooldown_min)
 
     def should_trigger(self, last_user_speech: float) -> bool:
         now = time.monotonic()
@@ -30,10 +41,10 @@ class ProactiveEngine:
 
     def mark_triggered(self) -> None:
         self._last_triggered = time.monotonic()
-        self._rotation      += 1
-        self._next_silence  = random.randint(*self.min_silence_range)
-        self._next_cooldown = random.randint(*self.cooldown_range)
-        print(f"[Proactive Engine] 🎲 Next natural check-in randomized to {self._next_silence}s silence threshold.")
+        self._rotation += 1
+        self._next_silence = self.min_silence_seconds + random.randint(-30, 30)
+        self._next_cooldown = self.cooldown_seconds + random.randint(-30, 30)
+        print(f"[Proactive Engine] Next natural check-in in {self._next_silence}s silence / {self._next_cooldown}s cooldown.")
 
     def build_prompt(
         self,

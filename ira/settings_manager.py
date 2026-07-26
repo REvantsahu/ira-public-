@@ -50,6 +50,15 @@ DEFAULT_SETTINGS = {
     "cdp": {
         "always_on": True,
     },
+    "proactive": {
+        "enabled": True,
+        "idle_minutes": 3,
+        "cooldown_minutes": 3,
+        "heartbeat_enabled": True,
+        "calendar_alerts_enabled": True,
+        "periodic_speech_enabled": False,
+        "periodic_speech_interval_minutes": 1,
+    },
 }
 
 
@@ -230,6 +239,14 @@ def load_settings() -> dict:
     settings.setdefault("avatar", dict(DEFAULT_SETTINGS["avatar"]))
     settings.setdefault("cdp", dict(DEFAULT_SETTINGS["cdp"]))
     settings["cdp"].setdefault("always_on", True)
+    settings.setdefault("proactive", dict(DEFAULT_SETTINGS["proactive"]))
+    settings["proactive"].setdefault("enabled", True)
+    settings["proactive"].setdefault("idle_minutes", 3)
+    settings["proactive"].setdefault("cooldown_minutes", 3)
+    settings["proactive"].setdefault("heartbeat_enabled", True)
+    settings["proactive"].setdefault("calendar_alerts_enabled", True)
+    settings["proactive"].setdefault("periodic_speech_enabled", False)
+    settings["proactive"].setdefault("periodic_speech_interval_minutes", 1)
     settings["location"].setdefault("auto_detect", True)
     settings["location"].setdefault("lat", DEFAULT_SETTINGS["location"]["lat"])
     settings["location"].setdefault("lng", DEFAULT_SETTINGS["location"]["lng"])
