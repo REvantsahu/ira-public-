@@ -82,6 +82,21 @@ def volume_mute():
         subprocess.run(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "toggle"],
             capture_output=True)
 
+def volume_get() -> int:
+    if _OS == "Windows":
+        try:
+            from ctypes import cast, POINTER
+            from comtypes import CLSCTX_ALL
+            from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+            devices   = AudioUtilities.GetSpeakers()
+            interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+            vol       = cast(interface, POINTER(IAudioEndpointVolume))
+            scalar    = vol.GetMasterVolumeLevelScalar()
+            return int(round(scalar * 100))
+        except Exception:
+            return -1
+    return -1
+
 def volume_set(value: int):
     value = max(0, min(100, int(value)))
     if _OS == "Windows":
@@ -95,19 +110,21 @@ def volume_set(value: int):
             vol       = cast(interface, POINTER(IAudioEndpointVolume))
             vol_db    = -65.25 if value == 0 else max(-65.25, 20 * math.log10(value / 100))
             vol.SetMasterVolumeLevel(vol_db, None)
-            return
+            return f"Volume set to {value}%."
         except Exception as e:
             print(f"[Settings] pycaw failed, using keypress fallback: {e}")
-            pyautogui.press("volumemute")
-            pyautogui.press("volumemute")
-    elif _OS == "Darwin":
-        subprocess.run(["osascript", "-e", f"set volume output volume {value}"],
-            capture_output=True)
-        return
-    else:
-        subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{value}%"],
-            capture_output=True)
-        return
+            try:
+                current = volume_get()
+                diff = value - current
+                if diff > 0:
+                    for _ in range(max(1, int(diff / 2))):
+                        pyautogui.press("volumeup")
+                elif diff < 0:
+                    for _ in range(max(1, int(abs(diff) / 2))):
+                        pyautogui.press("volumedown")
+                return f"Volume adjusted to ~{value}% via keypress fallback."
+            except Exception:
+                return f"Volume set attempted via fallback."
 
 def brightness_up():
     if _OS == "Darwin":
@@ -421,31 +438,48 @@ def open_run():
     if _OS == "Windows":
         pyautogui.hotkey("win", "r")
 
-def dark_mode():
+def dark_mode(mode: str = None):
+    want_light = False
+    if mode:
+        m = str(mode).lower().strip()
+        if m in ("light", "1", "true", "light_mode", "lightmode"):
+            want_light = True
+        elif m in ("dark", "0", "false", "dark_mode", "darkmode"):
+            want_light = False
+
     if _OS == "Darwin":
-        subprocess.run(["osascript", "-e",
-            'tell app "System Events" to tell appearance preferences '
-            'to set dark mode to not dark mode'],
-            capture_output=True)
+        if mode:
+            val = "false" if want_light else "true"
+            script = f'tell app "System Events" to tell appearance preferences to set dark mode to {val}'
+        else:
+            script = 'tell app "System Events" to tell appearance preferences to set dark mode to not dark mode'
+        subprocess.run(["osascript", "-e", script], capture_output=True)
     elif _OS == "Windows":
         try:
             import winreg
             key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize"
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_ALL_ACCESS)
-            current, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
-            winreg.SetValueEx(key, "AppsUseLightTheme", 0, winreg.REG_DWORD, 1 - current)
-            winreg.SetValueEx(key, "SystemUsesLightTheme", 0, winreg.REG_DWORD, 1 - current)
+            if mode:
+                new_val = 1 if want_light else 0
+            else:
+                current, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+                new_val = 1 - current
+            winreg.SetValueEx(key, "AppsUseLightTheme", 0, winreg.REG_DWORD, new_val)
+            winreg.SetValueEx(key, "SystemUsesLightTheme", 0, winreg.REG_DWORD, new_val)
             winreg.CloseKey(key)
         except Exception as e:
             print(f"[Settings] dark_mode registry failed: {e}")
     else:
         try:
-            result = subprocess.run(
-                ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
-                capture_output=True, text=True
-            )
-            current = result.stdout.strip()
-            new_scheme = "'default'" if "dark" in current else "'prefer-dark'"
+            if mode:
+                new_scheme = "'default'" if want_light else "'prefer-dark'"
+            else:
+                result = subprocess.run(
+                    ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
+                    capture_output=True, text=True
+                )
+                current = result.stdout.strip()
+                new_scheme = "'default'" if "dark" in current else "'prefer-dark'"
             subprocess.run(
                 ["gsettings", "set", "org.gnome.desktop.interface", "color-scheme", new_scheme],
                 capture_output=True
@@ -484,23 +518,171 @@ def toggle_wifi():
 
 def restart_computer():
     if _OS == "Windows":
-        subprocess.run(["shutdown", "/r", "/t", "10"], capture_output=True)
+        try:
+            result = subprocess.run(
+                ["shutdown", "/r", "/t", "10"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                return "Restart initiated successfully."
+            result2 = subprocess.run(
+                "shutdown /r /t 10",
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result2.returncode == 0:
+                return "Restart initiated via shell."
+            return f"Restart command returned code {result.returncode}: {result.stderr or result2.stderr}"
+        except Exception as e:
+            return f"Restart failed: {e}"
     elif _OS == "Darwin":
         subprocess.run(["osascript", "-e",
             'tell application "System Events" to restart'],
             capture_output=True)
+        return "Restart command sent to macOS."
     else:
         subprocess.run(["systemctl", "reboot"], capture_output=True)
+        return "Restart command sent to systemd."
 
 def shutdown_computer():
     if _OS == "Windows":
-        subprocess.run(["shutdown", "/s", "/t", "10"], capture_output=True)
+        try:
+            # Try without capture_output first to see any output
+            result = subprocess.run(
+                ["shutdown", "/s", "/t", "10"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                return "Shutdown initiated successfully."
+            # Try with shell=True as fallback
+            result2 = subprocess.run(
+                "shutdown /s /t 10",
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result2.returncode == 0:
+                return "Shutdown initiated via shell."
+            return f"Shutdown command returned code {result.returncode}: {result.stderr or result2.stderr}"
+        except Exception as e:
+            return f"Shutdown failed: {e}"
     elif _OS == "Darwin":
         subprocess.run(["osascript", "-e",
             'tell application "System Events" to shut down'],
             capture_output=True)
+        return "Shutdown command sent to macOS."
     else:
         subprocess.run(["systemctl", "poweroff"], capture_output=True)
+        return "Shutdown command sent to systemd."
+
+def list_installed_themes() -> list[dict]:
+    """Scan and list all installed system and user themes."""
+    themes = []
+    if _OS == "Windows":
+        dirs = [
+            Path(os.environ.get("WINDIR", "C:\\Windows")) / "Resources" / "Themes",
+            Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "Windows" / "Themes"
+        ]
+
+        current_theme_path = ""
+        try:
+            import winreg
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Themes", 0, winreg.KEY_READ)
+            current_theme_path, _ = winreg.QueryValueEx(key, "CurrentTheme")
+            winreg.CloseKey(key)
+        except Exception:
+            pass
+
+        for d in dirs:
+            if not d.exists():
+                continue
+            for p in d.glob("*.theme"):
+                try:
+                    display_name = p.stem.replace("_", " ").title()
+                    mode_type = "Light"
+                    is_active = (str(p).lower() == str(current_theme_path).lower())
+
+                    content = p.read_text(encoding="utf-8", errors="ignore")
+                    for line in content.splitlines():
+                        if line.startswith("DisplayName="):
+                            raw_name = line.split("=", 1)[1].strip()
+                            if "@" not in raw_name and raw_name:
+                                display_name = raw_name
+                        if "dark" in line.lower() or "dark.msstyles" in line.lower() or "appsuselighttheme=0" in line.lower():
+                            mode_type = "Dark"
+
+                    if "dark" in p.stem.lower():
+                        mode_type = "Dark"
+                    elif "light" in p.stem.lower():
+                        mode_type = "Light"
+
+                    themes.append({
+                        "name": display_name,
+                        "file": p.name,
+                        "path": str(p),
+                        "type": mode_type,
+                        "active": is_active
+                    })
+                except Exception as e:
+                    print(f"[Settings] Theme parse error on {p}: {e}")
+
+    return themes
+
+
+def get_installed_themes_report() -> str:
+    themes = list_installed_themes()
+    if not themes:
+        return "No theme files found on system."
+    lines = ["**Installed System & User Themes:**"]
+    for t in themes:
+        active_str = " (Active 🟢)" if t["active"] else ""
+        lines.append(f"• **{t['name']}** [{t['type']} Mode] — File: `{t['file']}`{active_str}")
+    return "\n".join(lines)
+
+
+def apply_theme(name_or_file: str) -> str:
+    """Apply a specific theme by name or filename."""
+    if not name_or_file:
+        return get_installed_themes_report()
+
+    name_clean = str(name_or_file).lower().strip()
+    themes = list_installed_themes()
+
+    target = None
+    for t in themes:
+        if (
+            name_clean == t["name"].lower()
+            or name_clean == t["file"].lower()
+            or name_clean in t["name"].lower()
+            or name_clean in t["file"].lower()
+        ):
+            target = t
+            break
+
+    if not target:
+        available = ", ".join([f"'{t['name']}'" for t in themes])
+        return f"Theme '{name_or_file}' not found. Available installed themes: {available}"
+
+    theme_path = target["path"]
+    if _OS == "Windows":
+        try:
+            os.startfile(theme_path)
+            if target["type"] == "Dark":
+                dark_mode("dark")
+            else:
+                dark_mode("light")
+            return f"Successfully applied theme '{target['name']}' [{target['type']} Mode]."
+        except Exception as e:
+            return f"Could not apply theme '{target['name']}': {e}"
+    else:
+        return "Theme switching via .theme files is supported on Windows."
 
 ACTION_MAP: dict[str, callable] = {
     "volume_up":           volume_up,
@@ -559,6 +741,19 @@ ACTION_MAP: dict[str, callable] = {
     "file_explorer":       open_file_explorer,
     "open_run":            open_run,
     "dark_mode":           dark_mode,
+    "light_mode":          dark_mode,
+    "windows_theme":       dark_mode,
+    "ui_theme":            dark_mode,
+    "theme":               dark_mode,
+    "toggle_theme":        dark_mode,
+    "list_themes":         get_installed_themes_report,
+    "get_themes":          get_installed_themes_report,
+    "show_themes":         get_installed_themes_report,
+    "view_themes":         get_installed_themes_report,
+    "apply_theme":         apply_theme,
+    "set_theme":           apply_theme,
+    "change_theme":        apply_theme,
+    "select_theme":        apply_theme,
     "toggle_wifi":         toggle_wifi,
     "restart":             restart_computer,
     "shutdown":            shutdown_computer,
@@ -616,13 +811,10 @@ def computer_settings(
     description = params.get("description", "").strip()
     value       = params.get("value", None)
 
-    if not raw_action and description:
-        detected   = _detect_action(description)
-        raw_action = detected.get("action", "")
-        if value is None:
-            value = detected.get("value")
-
     action = raw_action.lower().strip().replace(" ", "_").replace("-", "_")
+
+    if not action and description:
+        action = description.lower().strip().replace(" ", "_").replace("-", "_")
 
     if not action:
         return "No action could be determined."
@@ -641,10 +833,15 @@ def computer_settings(
 
     if action == "volume_set":
         try:
-            volume_set(int(value or 50))
-            return f"Volume set to {value}%."
+            result = volume_set(int(value or 50))
+            return result if result else f"Volume set to {value}%."
         except Exception as e:
             return f"Could not set volume: {e}"
+
+    if action in ("dark_mode", "light_mode", "windows_theme", "ui_theme", "theme", "toggle_theme"):
+        target_mode = value or ("light" if "light" in action else ("dark" if "dark" in action else None))
+        dark_mode(target_mode)
+        return f"System theme updated: {target_mode or 'toggled'}."
 
     if action in ("type_text", "write_on_screen", "type", "write"):
         text = str(value or params.get("text", "")).strip()
@@ -681,7 +878,9 @@ def computer_settings(
         return f"Unknown action: '{raw_action}'."
 
     try:
-        func()
+        result = func()
+        if result:
+            return result
         return f"Done: {action}."
     except Exception as e:
         print(f"[Settings] Action failed ({action}): {e}")

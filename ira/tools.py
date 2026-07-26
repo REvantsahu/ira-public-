@@ -121,7 +121,6 @@ def _get_screen_size():
 
 
 def _clamp(x, y):
-    """Clamp coordinates to screen bounds."""
     w, h = _get_screen_size()
     return max(0, min(x, w - 1)), max(0, min(y, h - 1))
 
@@ -701,17 +700,6 @@ def wiki_search(query: str) -> str:
 
 
 def open_url(url: str) -> str:
-    global _playwright_browser
-    
-    # Fast path: If Playwright has not been started yet, open instantly via system default browser
-    if _playwright_browser is None:
-        try:
-            import webbrowser
-            webbrowser.open(url)
-            return f"Opened: {url} instantly via default browser"
-        except Exception as e:
-            pass
-
     def _open_url_inner():
         page = get_browser_page()
         browser = page.context.browser
@@ -2612,35 +2600,46 @@ def _launch_chrome_with_cdp():
     import psutil
 
     if _is_chrome_running_with_cdp():
+        print("[CDP] Chrome already running with CDP enabled.")
         return True
 
     # Check if Chrome is already running but without CDP
     chrome_running = False
-    for proc in psutil.process_iter(['name']):
+    chrome_pids = []
+    for proc in psutil.process_iter(["pid", "name"]):
         try:
-            if proc.info['name'] and proc.info['name'].lower() == 'chrome.exe':
+            if proc.info["name"] and proc.info["name"].lower() == "chrome.exe":
                 chrome_running = True
-                break
+                chrome_pids.append(proc.info["pid"])
         except Exception:
             pass
 
     if chrome_running:
-        print("[CDP] Chrome is running without remote debugging. Restarting Chrome to enable CDP and restore all your tabs...")
-        # Gracefully request Chrome to close first, so it saves tabs/session
+        print("[CDP] Chrome is running without remote debugging port. Restarting Chrome with CDP on your profile...")
         try:
-            subprocess.run(["taskkill", "/IM", "chrome.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception as e:
-            print(f"[CDP] Graceful close command failed: {e}")
-        time.sleep(2.0)  # Wait for Chrome to save its session and exit gracefully
-        
-        # Kill any remaining chrome processes to release profile lock
-        for proc in psutil.process_iter(['name']):
+            for pid in chrome_pids:
+                try:
+                    psutil.Process(pid).terminate()
+                except Exception:
+                    pass
+            time.sleep(2.5)
+        except Exception:
+            pass
+
+        for _ in range(20):
+            time.sleep(0.3)
+            still = any(
+                p.info["name"] and p.info["name"].lower() == "chrome.exe"
+                for p in psutil.process_iter(["name"])
+            )
+            if not still:
+                break
+        else:
             try:
-                if proc.info['name'] and proc.info['name'].lower() == 'chrome.exe':
-                    proc.kill()
+                os.system("taskkill /F /IM chrome.exe")
+                time.sleep(1)
             except Exception:
                 pass
-        time.sleep(1.0)  # Give OS time to release file locks on the profile directory
 
     # Find Chrome executable
     chrome_paths = [
@@ -2658,21 +2657,32 @@ def _launch_chrome_with_cdp():
         print("[CDP] Chrome executable not found!")
         return False
 
-    # Use the user's actual Chrome user data directory (operate on their profile!)
     chrome_user_data = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Google", "Chrome", "User Data")
-    
-    # Launch Chrome with remote debugging on their actual profile.
-    # Bypassing the profile selection prompt and restoring last session:
-    subprocess.Popen([
+
+    chrome_cmd = [
         chrome_exe,
         f"--remote-debugging-port={CDP_PORT}",
         f"--user-data-dir={chrome_user_data}",
+        "--profile-directory=Default",
         "--restore-last-session",
         "--no-first-run",
         "--no-default-browser-check",
-    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    ]
+    try:
+        import winreg
 
-    # Wait up to 5 seconds for Chrome to start and CDP to be available
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+        )
+        val, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+        if val == 0:
+            chrome_cmd.extend(["--enable-features=WebUIDarkMode", "--force-dark-mode"])
+    except Exception:
+        pass
+
+    subprocess.Popen(chrome_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
     for _ in range(10):
         time.sleep(0.5)
         if _is_chrome_running_with_cdp():
@@ -2693,8 +2703,12 @@ def get_browser_page():
     # Prevent Playwright Sync API from complaining in background threads under asyncio
     import asyncio
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        if hasattr(asyncio, "_set_running_loop"):
+            asyncio._set_running_loop(None)
+    except Exception:
+        pass
+    try:
+        asyncio.get_event_loop_policy().set_event_loop(None)
     except Exception:
         pass
 
@@ -2786,8 +2800,42 @@ def get_browser_page():
     return _playwright_page
 
 
+def _get_element_screen_coords(page, selector: str) -> tuple[int, int] | None:
+    """Hybrid Automation Helper: Compute exact physical OS screen pixel from Playwright DOM bounding box for PyAutoGUI."""
+    try:
+        elem = page.query_selector(selector)
+        if not elem:
+            return None
+        box = elem.bounding_box()
+        if not box:
+            return None
+        
+        # Query window bounds via JS
+        win = page.evaluate("""() => {
+            return {
+                screenX: window.screenX,
+                screenY: window.screenY,
+                outerWidth: window.outerWidth,
+                innerWidth: window.innerWidth,
+                outerHeight: window.outerHeight,
+                innerHeight: window.innerHeight
+            }
+        }""")
+        
+        header_height = win["outerHeight"] - win["innerHeight"]
+        if header_height < 40 or header_height > 200:
+            header_height = 95  # Standard Chrome address bar height
+
+        cx = win["screenX"] + box["x"] + (box["width"] / 2)
+        cy = win["screenY"] + header_height + box["y"] + (box["height"] / 2)
+        return int(cx), int(cy)
+    except Exception as e:
+        print(f"[Hybrid Input] Coords calculation error: {e}")
+        return None
+
+
 def browser_control(action: str, url: str | None = None, selector: str | None = None, text: str | None = None, press_enter: bool = True, value: str | None = None) -> str:
-    """Control a headed browser using Playwright — DOM-level automation, no screenshots needed."""
+    """Control a headed browser using Playwright — DOM-level automation with PyAutoGUI hardware fallback."""
     import json
 
     def _browser_control_inner():
@@ -2812,12 +2860,32 @@ def browser_control(action: str, url: str | None = None, selector: str | None = 
                     print("[Browser Control] WhatsApp Web loaded successfully.")
                 except Exception as e:
                     print(f"[Browser Control] Warning: WhatsApp Web load timeout/failed: {e}")
+            elif "gemini.google.com" in lower_url:
+                print("[Browser Control] Detected Gemini Web App. Waiting for prompt box to load...")
+                try:
+                    page.wait_for_selector("rich-textarea, div[contenteditable='true'], textarea", timeout=20000)
+                    print("[Browser Control] Gemini Web App loaded successfully.")
+                except Exception as e:
+                    print(f"[Browser Control] Warning: Gemini Web App load timeout/failed: {e}")
             elif "youtube.com" in lower_url:
                 print("[Browser Control] Detected YouTube. Waiting for search box or main content...")
                 try:
                     # Wait up to 20 seconds for YouTube's search box or main content
                     page.wait_for_selector("input#search, ytd-browse, ytd-app", timeout=20000)
                     print("[Browser Control] YouTube loaded successfully.")
+
+                    # Auto-play first video if this is a search results page
+                    if "results?search_query=" in lower_url or "search_query" in lower_url:
+                        print("[Browser Control] YouTube search results detected. Auto-playing first video...")
+                        try:
+                            page.wait_for_selector("ytd-video-renderer a#video-title, a#video-title, #contents ytd-video-renderer a", timeout=8000)
+                            first_vid = page.query_selector("ytd-video-renderer a#video-title, a#video-title, #contents ytd-video-renderer a")
+                            if first_vid:
+                                first_vid.click()
+                                print("[Browser Control] Clicked first YouTube video link — playback started!")
+                                return f"Navigated to YouTube and started playing video for '{url}'. Title: {page.title()}"
+                        except Exception as ve:
+                            print(f"[Browser Control] Warning: Could not auto-click first video: {ve}")
                 except Exception as e:
                     print(f"[Browser Control] Warning: YouTube load timeout/failed: {e}")
             
@@ -2841,8 +2909,27 @@ def browser_control(action: str, url: str | None = None, selector: str | None = 
         elif action == "click":
             if not selector:
                 return "Error: selector is required."
-            page.click(selector)
-            return f"Clicked '{selector}'."
+            try:
+                page.click(selector, timeout=3000)
+            except Exception:
+                # Hybrid Fallback: Calculate exact screen pixel with Playwright, click with PyAutoGUI hardware mouse
+                coords = _get_element_screen_coords(page, selector)
+                if coords:
+                    import pyautogui
+                    pyautogui.click(coords[0], coords[1])
+                    return f"Clicked '{selector}' via PyAutoGUI Hybrid Hardware click at ({coords[0]}, {coords[1]})."
+                
+                # Universal fallback click for common elements
+                fallback_selectors = ["rich-textarea", "#prompt-textarea", "div[contenteditable='true']", "textarea", "button[type='submit']", "button"]
+                target_sel = selector
+                for fsel in fallback_selectors:
+                    try:
+                        page.click(fsel, timeout=1500)
+                        target_sel = fsel
+                        break
+                    except Exception:
+                        continue
+            return f"Clicked '{target_sel}'."
         
         elif action == "hover":
             if not selector:
@@ -2851,12 +2938,80 @@ def browser_control(action: str, url: str | None = None, selector: str | None = 
             return f"Hovered over '{selector}'."
         
         elif action == "type":
-            if not selector or not text:
-                return "Error: selector and text are required."
-            page.fill(selector, text)
+            if not text:
+                return "Error: text is required."
+            
+            selectors_to_try = []
+            if selector:
+                selectors_to_try.append(selector)
+            
+            universal_fallbacks = [
+                "rich-textarea div[contenteditable='true']",
+                "rich-textarea p",
+                "rich-textarea",
+                "#prompt-textarea",
+                "div[contenteditable='true']",
+                "div.ql-editor",
+                "p.placeholder",
+                "textarea",
+                "input[type='text']",
+                "input:not([type])"
+            ]
+            for sel in universal_fallbacks:
+                if sel not in selectors_to_try:
+                    selectors_to_try.append(sel)
+
+            success = False
+            target_selector = "unknown"
+            for sel in selectors_to_try:
+                try:
+                    page.fill(sel, text, timeout=1500)
+                    success = True
+                    target_selector = sel
+                    break
+                except Exception:
+                    try:
+                        # Try Playwright native click + keyboard typing
+                        page.click(sel, timeout=1500)
+                        page.keyboard.type(text)
+                        success = True
+                        target_selector = sel
+                        break
+                    except Exception:
+                        # Hybrid Fallback: Calculate exact screen pixel with Playwright DOM locator, click & type with PyAutoGUI hardware input
+                        coords = _get_element_screen_coords(page, sel)
+                        if coords:
+                            try:
+                                import pyautogui, pyperclip
+                                pyautogui.click(coords[0], coords[1])
+                                pyperclip.copy(text)
+                                pyautogui.hotkey('ctrl', 'v')
+                                success = True
+                                target_selector = f"{sel} (PyAutoGUI Hybrid)"
+                                break
+                            except Exception:
+                                continue
+
+            if not success:
+                try:
+                    viewport = page.viewport_size or {"width": 1280, "height": 800}
+                    import pyautogui, pyperclip
+                    # Click center-bottom input region of active browser
+                    win_info = page.evaluate("() => ({ screenX: window.screenX, screenY: window.screenY, outerWidth: window.outerWidth, outerHeight: window.outerHeight })")
+                    cx = win_info["screenX"] + (win_info["outerWidth"] / 2)
+                    cy = win_info["screenY"] + (win_info["outerHeight"] * 0.85)
+                    pyautogui.click(cx, cy)
+                    pyperclip.copy(text)
+                    pyautogui.hotkey('ctrl', 'v')
+                    success = True
+                    target_selector = "active_browser_hybrid_focus"
+                except Exception as e:
+                    return f"Failed to type: {e}"
+
             if press_enter:
-                page.press(selector, "Enter")
-            return f"Typed '{text[:50]}' into '{selector}'."
+                import pyautogui
+                pyautogui.press("enter")
+            return f"Typed '{text[:50]}' into '{target_selector}'."
         
         elif action == "press_key":
             if not text:
@@ -3219,142 +3374,25 @@ def activate_reasoning() -> str:
 
 
 def reminder(date: str, time: str, message: str) -> str:
-    """Set a timed reminder on Windows using Task Scheduler.
+    """Set a timed reminder via IRA's calendar system.
     Args:
         date (str): Date in YYYY-MM-DD format
         time (str): Time in HH:MM format (24h)
         message (str): Reminder message text
     """
-    import json
-    import os
-    import sys
-    import subprocess
-    from datetime import datetime
-    from pathlib import Path
-    
     try:
-        target_dt = datetime.strptime(f"{date.strip()} {time.strip()}", "%Y-%m-%d %H:%M")
-    except ValueError:
-        return "Error: Could not parse date/time. Please use YYYY-MM-DD and HH:MM format."
-        
-    if target_dt <= datetime.now():
-        return "Error: The specified time has already passed."
-        
-    ira_dir = Path.home() / ".ira" / "reminders"
-    ira_dir.mkdir(parents=True, exist_ok=True)
-    
-    task_name = f"IRAReminder_{target_dt.strftime('%Y%m%d_%H%M%S')}"
-    script_path = ira_dir / f"{task_name}.py"
-    
-    msg_literal = json.dumps(message)
-    notify_block = f"""
-message = {msg_literal}
-notified = False
-
-# Try sending UDP packet to local HUD bridge to speak the reminder naturally
-try:
-    import socket, json
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    payload = {{"speak": f"Hey Boss! Aapne yaad dilane bola tha: {{message}}"}}
-    sock.sendto(json.dumps(payload).encode("utf-8"), ("127.0.0.1", 8777))
-    sock.close()
-except Exception:
-    pass
-
-try:
-    from win10toast import ToastNotifier
-    ToastNotifier().show_toast("IRA Reminder", message, duration=15, threaded=False)
-    notified = True
-except Exception:
-    pass
-
-if not notified:
-    try:
-        from plyer import notification
-        notification.notify(title="IRA Reminder", message=message, timeout=15)
-        notified = True
-    except Exception:
-        pass
-
-if not notified:
-    try:
-        import subprocess
-        subprocess.run(["msg", "*", "/TIME:30", message], check=False)
-    except Exception:
-        pass
-
-try:
-    import winsound
-    for freq in [800, 1000, 1200]:
-        winsound.Beep(freq, 150)
-        import time; time.sleep(0.05)
-except Exception:
-    pass
-"""
-    script_body = f"""# Auto-generated by IRA reminder — do not edit
-import sys, os, pathlib
-{notify_block}
-try:
-    pathlib.Path(__file__).unlink(missing_ok=True)
-except Exception:
-    pass
-"""
-    try:
-        script_path.write_text(script_body, encoding="utf-8")
-    except Exception as e:
-        return f"Error: Could not create reminder script: {e}"
-        
-    python_exe = Path(sys.executable)
-    pythonw = python_exe.parent / "pythonw.exe"
-    if pythonw.exists():
-        python_exe = pythonw
-        
-    xml_path = ira_dir / f"{task_name}.xml"
-    xml_content = (
-        '<?xml version="1.0" encoding="UTF-16"?>\n'
-        '<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">\n'
-        '  <RegistrationInfo><Description>IRA Reminder Task</Description></RegistrationInfo>\n'
-        '  <Triggers><TimeTrigger>\n'
-        f'    <StartBoundary>{target_dt.strftime("%Y-%m-%dT%H:%M:%S")}</StartBoundary>\n'
-        '    <Enabled>true</Enabled>\n'
-        '  </TimeTrigger></Triggers>\n'
-        '  <Actions><Exec>\n'
-        f'    <Command>{python_exe}</Command>\n'
-        f'    <Arguments>"{script_path}"</Arguments>\n'
-        '  </Exec></Actions>\n'
-        '  <Settings>\n'
-        '    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>\n'
-        '    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>\n'
-        '    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>\n'
-        '    <StartWhenAvailable>true</StartWhenAvailable>\n'
-        '    <ExecutionTimeLimit>PT5M</ExecutionTimeLimit>\n'
-        '    <Enabled>true</Enabled>\n'
-        '  </Settings>\n'
-        '  <Principals><Principal>\n'
-        '    <LogonType>InteractiveToken</LogonType>\n'
-        '    <RunLevel>LeastPrivilege</RunLevel>\n'
-        '  </Principal></Principals>\n'
-        '</Task>'
-    )
-    
-    try:
-        xml_path.write_text(xml_content, encoding="utf-16")
-        result = subprocess.run(
-            ["schtasks", "/Create", "/TN", task_name, "/XML", str(xml_path), "/F"],
-            capture_output=True, text=True
+        from actions.calendar import create_calendar_event
+        return create_calendar_event(
+            title=message,
+            message=message,
+            event_type="reminder",
+            date=date.strip(),
+            start_time=time.strip()[:5],
+            priority="normal",
+            source="user",
         )
-        xml_path.unlink(missing_ok=True)
     except Exception as e:
-        script_path.unlink(missing_ok=True)
-        return f"Error: Failed to register scheduler task: {e}"
-        
-    if result.returncode != 0:
-        script_path.unlink(missing_ok=True)
-        err = (result.stderr or result.stdout).strip()
-        return f"Error registering reminder: {err}"
-        
-    friendly_time = target_dt.strftime("%B %d at %I:%M %p")
-    return f"Reminder set successfully for {friendly_time}."
+        return f"Error setting reminder: {e}"
 
 
 # === SUPER-CONSOLIDATED TOOL DISPATCHERS ===
@@ -3591,7 +3629,12 @@ def browser_control_consolidated(action: str, url: str = None, selector: str = N
     if action == "open_system_browser":
         if url is None:
             return "Error: open_system_browser requires url."
-        return open_url(url)
+        try:
+            import webbrowser
+            webbrowser.open(url)
+            return f"Opened: {url}"
+        except Exception as e:
+            return f"Error opening browser: {e}"
     elif action == "agent_task":
         if task is None:
             return "Error: agent_task requires task."
@@ -3634,13 +3677,22 @@ def system_control(action: str, app_name: str = None, command: str = None, confi
         except Exception as e:
             print(f"[Jarvis OpenApp] Exception: {e}")
 
-    # 2. Reminder primary routing
+    # 2. Reminder primary routing — use new calendar system
     elif action == "reminder":
         if date is None or time_val is None or message is None:
             return "Error: reminder requires date, time_val, and message parameters."
         try:
-            print(f"[Jarvis Reminder] Setting reminder for {date} {time_val} primary...")
-            res = jarvis_reminder.reminder({"date": date, "time": time_val, "message": message})
+            print(f"[Jarvis Reminder] Setting reminder for {date} {time_val} via calendar...")
+            from actions.calendar import create_calendar_event
+            res = create_calendar_event(
+                title=message,
+                message=message,
+                event_type="reminder",
+                date=str(date).strip(),
+                start_time=str(time_val).strip()[:5],
+                priority="normal",
+                source="user",
+            )
             if res and "failed" not in res.lower() and "error" not in res.lower():
                 return res
         except Exception as e:
@@ -3907,6 +3959,7 @@ TOOL_MAP = {
     "memory_control": None,
     "skill_control": None,
     "mcp_control": None,
+    "calendar_control": None,
     "node_control": None,
 
     # === ORIGINAL / COMPATIBILITY ===
@@ -4230,6 +4283,86 @@ def _execute_tool_inner(name: str, args: dict, event_callback=None) -> str:
             except Exception as e:
                 return f"Composio error: {e}"
         return f"Unknown mcp_control action: {action}"
+
+    # Handle Consolidated Calendar tools
+    if name == "calendar_control":
+        from actions.calendar import (
+            complete_calendar_event,
+            create_calendar_event,
+            delete_calendar_event,
+            disable_calendar_event,
+            enable_calendar_event,
+            get_today_schedule,
+            get_upcoming,
+            list_calendar_events,
+            search_calendar_events,
+            skip_today_event,
+            update_calendar_event,
+        )
+        action = args.get("action")
+        event_id = args.get("event_id")
+        title = args.get("title")
+        message = args.get("message")
+        event_type = args.get("event_type")
+        date = args.get("date")
+        start_time = args.get("start_time")
+        end_time = args.get("end_time")
+        recurrence_rule = args.get("recurrence_rule")
+        query = args.get("query")
+        patch = args.get("patch")
+
+        if action == "create":
+            if not date:
+                return "Error: calendar create requires date."
+            return create_calendar_event(
+                title=title or message or "Event",
+                message=message or title or "Event",
+                event_type=event_type or "event",
+                date=date,
+                start_time=start_time or "",
+                end_time=end_time or "",
+                recurrence_rule=recurrence_rule,
+                priority=args.get("priority", "normal"),
+                source=args.get("source", "user"),
+                metadata=args.get("metadata", {}),
+            )
+        elif action == "list":
+            return list_calendar_events(
+                date=date or "",
+                event_type=event_type or "",
+                active_only=args.get("active_only", True),
+            )
+        elif action == "today":
+            return get_today_schedule()
+        elif action == "upcoming":
+            return get_upcoming(within_hours=int(args.get("within_hours", 24)))
+        elif action == "update":
+            if not event_id:
+                return "Error: calendar update requires event_id."
+            return update_calendar_event(event_id, patch=patch)
+        elif action == "delete":
+            if not event_id:
+                return "Error: calendar delete requires event_id."
+            return delete_calendar_event(event_id)
+        elif action == "enable":
+            if not event_id:
+                return "Error: calendar enable requires event_id."
+            return enable_calendar_event(event_id)
+        elif action == "disable":
+            if not event_id:
+                return "Error: calendar disable requires event_id."
+            return disable_calendar_event(event_id)
+        elif action == "complete":
+            if not event_id:
+                return "Error: calendar complete requires event_id."
+            return complete_calendar_event(event_id)
+        elif action == "skip_today":
+            if not event_id:
+                return "Error: calendar skip_today requires event_id."
+            return skip_today_event(event_id)
+        elif action == "search":
+            return search_calendar_events(query=query or "")
+        return f"Unknown calendar_control action: {action}"
 
     # Handle Node tools
     if name == "node_control" or name.startswith("node_"):

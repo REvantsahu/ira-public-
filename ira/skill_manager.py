@@ -129,3 +129,11 @@ SKILL_FUNCTIONS = {
     "skill_delete": skill_delete,
     "skill_list": skill_list,
 }
+
+# Function aliases for actions/skill_action.py and backward compatibility
+create_skill = skill_create
+read_skill = skill_read
+edit_skill = skill_edit
+delete_skill = skill_delete
+list_skills = skill_list
+

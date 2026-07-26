@@ -20,6 +20,16 @@ from playwright.async_api import (
 )
 _OS = platform.system()   # "Windows" | "Darwin" | "Linux"
 
+def _safe_print(text: str):
+    try:
+        print(text)
+    except Exception:
+        try:
+            print(str(text).encode("ascii", "replace").decode("ascii"))
+        except Exception:
+            pass
+
+
 def _normalize_url(url: str) -> str:
     """
     Bare words like "instagram" → "https://instagram.com"
@@ -103,12 +113,12 @@ def _real_profile_dir(browser: str) -> str:
 
     for p in candidates:
         if p.exists():
-            print(f"[Browser] ✅ Real profile found for {browser}: {p}")
+            _safe_print(f"[Browser] ✅ Real profile found for {browser}: {p}")
             return str(p)
 
     fallback = home / ".jarvis_profiles" / browser
     fallback.mkdir(parents=True, exist_ok=True)
-    print(f"[Browser] ⚠️  Real profile not found for {browser}, using: {fallback}")
+    _safe_print(f"[Browser] ⚠️  Real profile not found for {browser}, using: {fallback}")
     return str(fallback)
 
 def _firefox_profile_dir() -> Optional[str]:
@@ -491,24 +501,39 @@ class _BrowserSession:
             + (f" @ {exe}" if exe else "")
         )
 
+        # Check if browser process is already active on system to avoid 10s Playwright lock timeout
+        profile_locked = False
         try:
-            self._context = await engine_obj.launch_persistent_context(profile, **kwargs)
-            await asyncio.sleep(0.5) 
-            self._page = await self._context.new_page()
-            print(f"[Browser] ✅ Launched [{label}] profile={profile}")
-            return
-        except Exception as e:
-            print(f"[Browser] ⚠️  Real profile failed for {label}: {e}")
+            import psutil
+            target_bin = self.browser_name.lower()
+            for p in psutil.process_iter(['name']):
+                pname = (p.info.get('name') or '').lower()
+                if target_bin in pname or (target_bin in ('chrome', 'google-chrome') and 'chrome.exe' in pname):
+                    profile_locked = True
+                    break
+        except Exception:
+            pass
+
+        if not profile_locked:
+            try:
+                self._context = await engine_obj.launch_persistent_context(profile, **kwargs)
+                await asyncio.sleep(0.5) 
+                self._page = await self._context.new_page()
+                _safe_print(f"[Browser] ✅ Launched [{label}] profile={profile}")
+                return
+            except Exception as e:
+                _safe_print(f"[Browser] ⚠️  Real profile failed for {label}: {e}")
+        else:
+            _safe_print(f"[Browser] ⚡ Browser process active — using JARVIS profile for fast startup")
 
         jarvis_profile = str(Path.home() / ".jarvis_profiles" / self.browser_name)
         Path(jarvis_profile).mkdir(parents=True, exist_ok=True)
-        print(f"[Browser] Retrying with JARVIS profile: {jarvis_profile}")
 
         try:
             self._context = await engine_obj.launch_persistent_context(jarvis_profile, **kwargs)
             await asyncio.sleep(0.5)
             self._page = await self._context.new_page()
-            print(f"[Browser] ✅ Launched [{label}] with JARVIS profile")
+            _safe_print(f"[Browser] ✅ Launched [{label}] with JARVIS profile")
         except Exception as e2:
             raise RuntimeError(f"Could not launch {self.browser_name}: {e2}") from e2
 
@@ -634,21 +659,77 @@ class _BrowserSession:
 
     async def smart_click(self, description: str) -> str:
         page = await self._get_page()
+        desc_lower = description.lower().strip()
+
+        # 1. Site-aware intelligent CSS selectors for popular web platforms
+        site_selectors = []
+        if any(w in desc_lower for w in ["first video", "video title", "first result", "play video", "top video"]):
+            site_selectors.extend([
+                "ytd-video-renderer a#video-title",
+                "a#video-title",
+                "ytd-rich-grid-media a#video-title",
+                "ytd-grid-video-renderer a#video-title",
+                "a#thumbnail",
+                "div.g a h3",
+                ".result__title a",
+                "article a h2",
+            ])
+        if any(w in desc_lower for w in ["search bar", "search box", "search input", "search field"]):
+            site_selectors.extend([
+                "input#search",
+                "input[name='search_query']",
+                "textarea[name='q']",
+                "input[name='q']",
+                "input[type='search']",
+                "input[placeholder*='Search' i]",
+            ])
+        if any(w in desc_lower for w in ["search button", "search icon"]):
+            site_selectors.extend([
+                "button#search-icon-legacy",
+                "button[type='submit']",
+                "input[type='submit']",
+            ])
+        if any(w in desc_lower for w in ["prompt", "chatgpt", "message input", "chat input", "textbox"]):
+            site_selectors.extend([
+                "#prompt-textarea",
+                "div[contenteditable='true']",
+                "textarea[data-id]",
+                "textarea",
+            ])
+        if any(w in desc_lower for w in ["send", "submit", "send message", "submit prompt"]):
+            site_selectors.extend([
+                "button[data-testid='send-button']",
+                "button[aria-label*='Send' i]",
+                "button[type='submit']",
+            ])
+
+        for sel in site_selectors:
+            try:
+                loc = page.locator(sel).first
+                if await loc.count() > 0 and await loc.is_visible(timeout=1000):
+                    await loc.click(timeout=3000)
+                    return f"Clicked (smart selector '{sel}'): '{description}'"
+            except Exception:
+                pass
+
+        # 2. Standard Playwright accessibility role lookup
         for role in ("button", "link", "searchbox", "textbox", "menuitem", "tab"):
             try:
                 loc = page.get_by_role(role, name=description)
                 if await loc.count() > 0:
-                    await loc.first.click(timeout=5_000)
+                    await loc.first.click(timeout=4_000)
                     return f"Clicked ({role}): '{description}'"
             except Exception:
                 pass
+
+        # 3. Fallback text, placeholder, and attribute locators
         for attempt in (
-            lambda: page.get_by_text(description, exact=False).first.click(timeout=5_000),
-            lambda: page.get_by_placeholder(description, exact=False).first.click(timeout=5_000),
+            lambda: page.get_by_text(description, exact=False).first.click(timeout=4_000),
+            lambda: page.get_by_placeholder(description, exact=False).first.click(timeout=4_000),
             lambda: page.locator(
                 f'[alt*="{description}" i],[title*="{description}" i],'
                 f'[aria-label*="{description}" i]'
-            ).first.click(timeout=5_000),
+            ).first.click(timeout=4_000),
         ):
             try:
                 await attempt()
@@ -659,6 +740,41 @@ class _BrowserSession:
 
     async def smart_type(self, description: str, text: str) -> str:
         page = await self._get_page()
+        desc_lower = description.lower().strip()
+
+        # 1. Site-aware intelligent selectors
+        site_selectors = []
+        if any(w in desc_lower for w in ["prompt", "chatgpt", "message", "chat", "input"]):
+            site_selectors.extend([
+                "#prompt-textarea",
+                "div[contenteditable='true']",
+                "textarea[data-id]",
+                "textarea",
+            ])
+        if "search" in desc_lower:
+            site_selectors.extend([
+                "input#search",
+                "input[name='search_query']",
+                "textarea[name='q']",
+                "input[name='q']",
+                "input[type='search']",
+                "input[placeholder*='Search' i]",
+            ])
+
+        for sel in site_selectors:
+            try:
+                loc = page.locator(sel).first
+                if await loc.count() > 0 and await loc.is_visible(timeout=1000):
+                    try:
+                        await loc.click(timeout=2000)
+                    except Exception:
+                        pass
+                    await loc.fill(text, timeout=3000)
+                    return f"Typed into '{sel}': '{text}'"
+            except Exception:
+                pass
+
+        # 2. Standard Playwright input candidates
         candidates = [
             ("placeholder", page.get_by_placeholder(description, exact=False)),
             ("label",       page.get_by_label(description, exact=False)),
@@ -671,8 +787,7 @@ class _BrowserSession:
                 el = loc.first
                 if await el.count() == 0:
                     continue
-                await el.clear()
-                await el.type(text, delay=50)
+                await el.fill(text, timeout=3000)
                 return f"Typed into ({method}): '{description}'"
             except Exception:
                 continue
@@ -888,6 +1003,6 @@ def browser_control(
 
 def _log(player, text: str):
     short = str(text)[:80]
-    print(f"[Browser] {short}")
+    _safe_print(f"[Browser] {short}")
     if player:
         player.write_log(f"[browser] {short[:60]}")

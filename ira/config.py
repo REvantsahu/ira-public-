@@ -973,6 +973,43 @@ TOOL_DECLARATIONS = [
             "required": ["action"]
         }
     },
+    # === CONSOLIDATED CALENDAR CONTROL ===
+    {
+        "name": "calendar_control",
+        "description": "Manage IRA's calendar: create reminders, schedule events, list today's schedule, manage recurring routines, or answer schedule questions. Use this for any time-based planning, reminders, appointments, or calendar queries.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {
+                    "type": "STRING",
+                    "enum": [
+                        "create", "list", "today", "upcoming",
+                        "update", "delete", "enable", "disable",
+                        "complete", "skip_today", "search"
+                    ],
+                    "description": "Calendar action"
+                },
+                "event_id": {"type": "STRING", "description": "Event identifier (update/delete/enable/disable/complete/skip_today actions)"},
+                "title": {"type": "STRING", "description": "Event title (create action)"},
+                "message": {"type": "STRING", "description": "Event description or reminder message (create action)"},
+                "event_type": {
+                    "type": "STRING",
+                    "enum": ["reminder", "task", "routine", "birthday", "holiday", "appointment", "exam", "event"],
+                    "description": "Event type (create action, default: reminder)"
+                },
+                "date": {"type": "STRING", "description": "Event date YYYY-MM-DD or natural phrase like 'today', 'tomorrow', 'August 3rd' (create/list actions)"},
+                "start_time": {"type": "STRING", "description": "Start time HH:MM (create action)"},
+                "end_time": {"type": "STRING", "description": "End time HH:MM (create action)"},
+                "recurrence_rule": {"type": "STRING", "description": "JSON recurrence rule string or natural phrase like 'daily', 'every Monday', 'weekly', 'monthly', 'yearly' (create/update actions)"},
+                "priority": {"type": "STRING", "enum": ["low", "normal", "high", "urgent"], "description": "Priority level (create/update action, default: normal)"},
+                "query": {"type": "STRING", "description": "Search text or natural time phrase for schedule queries (list/search/upcoming actions)"},
+                "within_hours": {"type": "INTEGER", "description": "Look-ahead window in hours (upcoming action, default: 24)"},
+                "active_only": {"type": "BOOLEAN", "description": "Only return active events (list action, default: true)"},
+                "patch": {"type": "STRING", "description": "JSON string of fields to update (update action)"}
+            },
+            "required": ["action"]
+        }
+    },
     # === UTILITY & COMPOSITE ACTIONS ===
     {"name": "wait", "description": "Pause execution for Y seconds.", "parameters": {"type": "OBJECT", "properties": {"seconds": {"type": "NUMBER", "description": "Seconds to wait (default: 1.5)"}}}},
     {"name": "send_whatsapp", "description": "Send message or attach files on WhatsApp Web.", "parameters": {"type": "OBJECT", "properties": {"contact": {"type": "STRING", "description": "Contact name/phone"}, "message": {"type": "STRING", "description": "Text message/caption"}, "phone": {"type": "STRING", "description": "Phone number with country code"}, "filepath": {"type": "STRING", "description": "File path to attach"}}, "required": ["contact"]}},

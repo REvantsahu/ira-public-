@@ -111,11 +111,12 @@ def _get_system_stats() -> dict:
     """Return system stats dict."""
     import psutil
     stats = {}
-    stats["cpu"] = psutil.cpu_percent(interval=None)
+    # Use interval=0.1 so psutil doesn't return 0.0 on snapshot
+    stats["cpu"] = psutil.cpu_percent(interval=0.1)
     ram = psutil.virtual_memory()
     stats["ram"] = ram.percent
-    stats["ram_used"] = f"{ram.used // (1024**3)}GB"
-    stats["ram_total"] = f"{ram.total // (1024**3)}GB"
+    stats["ram_used"] = f"{ram.used / (1024**3):.1f}GB"
+    stats["ram_total"] = f"{ram.total / (1024**3):.1f}GB"
     try:
         bat = psutil.sensors_battery()
         stats["battery"] = bat.percent if bat else None
@@ -258,12 +259,19 @@ class HUDBridge(QObject):
         self._stop_flag = threading.Event()
         self._voice_stop = threading.Event()  # separate stop flag for voice loop
         self._agent_thread: threading.Thread | None = None
-        self._voice_thread: threading.Thread | None = None
         self._cmd_queue: queue.Queue = queue.Queue()
+        self._msg_queue: queue.Queue = self._cmd_queue
         self._hotspot_rects: list = []  # (x, y, w, h) tuples
 
         # Gemini Live
         self._live_session = None
+        self._voice_thread = None
+        self._voice_loop = None
+        self._hum_channel = None
+        self._expression_timer = None
+        self._qml_window = None
+        self._last_input_source = "voice"
+        self.on_text_command = None
         self._voice_resumption_handle = None
         self._pending_startup_briefing = None
         self._startup_briefing_sent = False
@@ -274,6 +282,7 @@ class HUDBridge(QObject):
         self._mic_paused_timestamp = 0.0
         self._turn_complete_received = False
         self._go_away_received = False
+        self._live_interrupted = False  # True when user interrupted current Live turn
         self._gesture_monitor_shown = False  # True when gesture monitor window is open
 
         # Emergency tool borrowing — dynamic fallback when background agent API is exhausted
@@ -308,6 +317,8 @@ class HUDBridge(QObject):
         self._active_voice_id = 0.0
         self._user_was_present = False
         self._user_left_time = None
+        self._last_user_speech_time = time.monotonic()
+        self._last_proactive_speech_time = 0.0
 
         # Connect the internal hop signal to main-thread streaming slot
         self._streamReadySignal.connect(self._on_stream_ready, Qt.ConnectionType.QueuedConnection)
@@ -315,13 +326,21 @@ class HUDBridge(QObject):
         # Connect the external UDP receiver signal thread-safely
         self._externalExpressionSignal.connect(self.setAvatarExpression, Qt.ConnectionType.QueuedConnection)
         self._start_udp_listener()
+        self._start_network_monitor()
+        
+        # Register HUDBridge with native avatar expression action handler
+        try:
+            from actions.change_avatar_expression import register_hud_bridge
+            register_hud_bridge(self)
+        except Exception as e:
+            print(f"[HUD] Error registering HUD bridge for avatar expressions: {e}")
         
         # Context mode setup
         self._context_mode = "default"
         self._setup_active_window_listener()
 
         self._start_background_tasks()
-        
+
         # Trigger startup welcome briefing (Time, Date, News summary)
         self._run_startup_briefing()
 
@@ -353,6 +372,9 @@ class HUDBridge(QObject):
     @Slot(str, int)
     def setAvatarExpression(self, expression: str, duration_seconds: int = 5):
         """Set the avatar expression temporarily and revert to normal after duration_seconds."""
+        if QThread.currentThread() != self.thread():
+            self._externalExpressionSignal.emit(expression, duration_seconds)
+            return
         self.avatarExpressionChanged.emit(expression)
         if hasattr(self, "_expression_timer") and self._expression_timer:
             try:
@@ -375,6 +397,73 @@ class HUDBridge(QObject):
             except Exception:
                 pass
             self._expression_timer = None
+
+    def _clean_text_tools(self, text: str, execute: bool = True) -> str:
+        if not text:
+            return text
+        import re
+        text = re.sub(r"^text_?content\}?", "", text, flags=re.IGNORECASE).strip()
+        # Regex to match tool calls like change_avatar_expression(expression='happy') or change avatar expression(...)
+        pattern = r"(change[\s_]avatar[\s_]expression|change[\s_]hologram[\s_]theme|collapse[\s_]hud|expand[\s_]hud)\s*\((.*?)\)"
+        
+        def replace_match(match):
+            raw_name = match.group(1)
+            args_str = match.group(2).strip()
+            
+            if not execute:
+                return "" # Just strip during real-time streaming
+                
+            tool_name = raw_name.replace(" ", "_").lower()
+            args = {}
+            if args_str:
+                parts = [p.strip() for p in args_str.split(",")]
+                for part in parts:
+                    if "=" in part:
+                        k, v = part.split("=", 1)
+                        k = k.strip()
+                        v = v.strip().strip("'\"")
+                        args[k] = v
+                    else:
+                        v = part.strip().strip("'\"")
+                        if tool_name == "change_avatar_expression":
+                            args["expression"] = v
+                        elif tool_name == "change_hologram_theme":
+                            args["theme"] = v
+            
+            print(f"[HUD Text-Tool Parser] Executing text-based tool call: {tool_name}({args})")
+            try:
+                if tool_name == "change_avatar_expression":
+                    expr = args.get("expression", "normal")
+                    dur = 5
+                    if "duration_seconds" in args:
+                        try:
+                            dur = int(args["duration_seconds"])
+                        except ValueError:
+                            pass
+                    elif "duration" in args:
+                        try:
+                            dur = int(args["duration"])
+                        except ValueError:
+                            pass
+                    self.setAvatarExpression(expr, dur)
+                elif tool_name == "change_hologram_theme":
+                    theme = args.get("theme", "cyan")
+                    from tools import execute_tool
+                    import threading
+                    threading.Thread(target=lambda: execute_tool("change_hologram_theme", {"theme": theme}), daemon=True).start()
+                elif tool_name == "collapse_hud":
+                    self.setHUDActive(False)
+                elif tool_name == "expand_hud":
+                    self.setHUDActive(True)
+            except Exception as e:
+                print(f"[HUD Text-Tool Parser] Error: {e}")
+                
+            return ""
+            
+        cleaned = re.sub(pattern, replace_match, text, flags=re.IGNORECASE)
+        # Clean up double spaces or trailing punctuation
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return cleaned
 
     @Slot()
     def shiftToActiveScreen(self):
@@ -401,6 +490,31 @@ class HUDBridge(QObject):
                 self._qml_window.setHeight(geom.height())
                 print(f"[HUD] Shifted HUD window to screen: {active_screen.name()} ({geom.x()}, {geom.y()})")
                 self.refreshHotspots()
+
+    def _start_network_monitor(self):
+        def _network_worker():
+            from gemini import is_online
+            was_online = True
+            time.sleep(3)
+            while not self._stop_flag.is_set():
+                try:
+                    time.sleep(4.0)
+                    online = is_online()
+                    if online != was_online:
+                        was_online = online
+                        if not online:
+                            print("[HUD] ⚠️ Network lost — switching HUD to offline mode")
+                            self.statusChanged.emit("offline", "Network Offline — Retrying...")
+                            self.assistantResponse.emit(_md_to_html("⚠️ **Network Offline**: Internet connection lost. Remote Gemini API features are paused until connection is restored."))
+                        else:
+                            print("[HUD] ✅ Network restored — internet connectivity active")
+                            self.statusChanged.emit("idle", "Ready")
+                            self.assistantResponse.emit(_md_to_html("✅ **Network Restored**: Internet connection is back online! IRA is fully ready."))
+                except Exception:
+                    pass
+
+        t = threading.Thread(target=_network_worker, name="NetworkMonitor", daemon=True)
+        t.start()
 
     def _start_udp_listener(self):
         t = threading.Thread(target=self._udp_listener_loop, daemon=True)
@@ -573,7 +687,32 @@ class HUDBridge(QObject):
     @Slot()
     @Slot(str, str)
     def newChat(self, chat_model_json: str = "", node_model_json: str = ""):
-        """Save current conversation, clear chat for new one."""
+        # Force stop any running agents and background threads
+        self._stop_flag.set()
+        import stop
+        stop.request_stop()
+        if self._agent:
+            self._agent.stop_requested = True
+        if hasattr(self, "_main_agent") and self._main_agent:
+            self._main_agent.stop_requested = True
+
+        # Stop Live WebSocket voice session and clear audio
+        try:
+            self._stop_gemini_live()
+        except Exception:
+            pass
+        self._drain_audio_queue()
+        self._voice_responding = False
+        self._voice_mic_paused = False
+
+        # Clear message queue
+        import queue
+        while not self._cmd_queue.empty():
+            try:
+                self._cmd_queue.get_nowait()
+            except queue.Empty:
+                break
+
         if self._chat_history:
             chat_model_data = json.loads(chat_model_json) if chat_model_json else []
             nodes_data = json.loads(node_model_json) if node_model_json else []
@@ -595,6 +734,9 @@ class HUDBridge(QObject):
         # Clear python active nodes list
         import tools
         tools._ACTIVE_NODES.clear()
+        self._set_processing(False)
+        self.statusChanged.emit("idle", "Ready")
+        self.phaseChanged.emit("", "")
         print("[HUD] Conversation reset — cleared chat history, active nodes, and internal history.")
 
     @Slot()
@@ -776,22 +918,52 @@ class HUDBridge(QObject):
 
     @Slot(str, str, str)
     def sendMessage(self, text: str, images_json: str = "[]", texts_json: str = "[]"):
+        from gemini import is_online
+        if not is_online():
+            offline_msg = "⚠️ **Network Offline**: Internet connection disconnected hai boss. Network connect hote hi IRA respond karegi."
+            self.add_message("user", text)
+            self.add_message("assistant", offline_msg)
+            self.assistantResponse.emit(_md_to_html(offline_msg))
+            self.statusChanged.emit("offline", "Network Offline — Retrying...")
+            return
+
+        # Clear any previous stop/interruption flags so new user prompt processes cleanly
+        self._stop_flag.clear()
+        import stop
+        stop.reset_stop()
+        if self._agent:
+            self._agent.stop_requested = False
+        if hasattr(self, "_main_agent") and self._main_agent:
+            self._main_agent.stop_requested = False
+        
+        self._last_user_speech_time = time.monotonic()
+
         if self._processing or (self._agent_thread and self._agent_thread.is_alive()):
             print(f"[HUD] Agent is busy — queuing message: '{text[:50]}'")
             self.add_message("user", text)
-            self._msg_queue.put((text, images_json, texts_json))
-            self.activityLog.emit(f"📌 Message queued ({self._msg_queue.qsize()} pending): {text[:40]}...")
+            self._cmd_queue.put((text, images_json, texts_json))
+            self.activityLog.emit(f"📌 Message queued ({self._cmd_queue.qsize()} pending): {text[:40]}...")
             return
             
         has_attachments = (images_json and images_json != "[]") or (texts_json and texts_json != "[]")
         
+        # Prefer Live WebSocket whenever possible (voice mode or active session)
+        use_live = False
         if self._live_session and getattr(self, "_voice_loop", None) and not has_attachments:
+            use_live = True
+        elif self._voice_mode and not has_attachments:
+            if not self._live_session or not getattr(self, "_voice_loop", None):
+                print("[HUD] Voice mode is active but session was closed — restarting Gemini Live...")
+                self._start_gemini_live()
+            if self._live_session and getattr(self, "_voice_loop", None):
+                use_live = True
+        
+        if use_live:
+            self._live_interrupted = False  # Clear interrupt flag so new turn processes normally
             self._last_input_source = "text"
             self._set_processing(True)
-            self._stop_flag.clear()
             self.statusChanged.emit("thinking", "Thinking")
             
-            # Track user message
             self.add_message("user", text)
             self._internal_session_history.append(
                 {"role": "user", "source": "text", "text": text}
@@ -811,45 +983,73 @@ class HUDBridge(QObject):
                 self._voice_loop
             )
             return
+        
+        if getattr(self, "on_text_command", None) and not has_attachments:
+            self._last_input_source = "text"
+            self._set_processing(True)
+            self.statusChanged.emit("thinking", "Thinking")
             
+            self.add_message("user", text)
+            self._internal_session_history.append(
+                {"role": "user", "source": "text", "text": text}
+            )
+            self._activity_logs.append({
+                "timestamp": datetime.datetime.now().isoformat(),
+                "message": f"👤 USER: {text}"
+            })
+            print(f"[HUD] Text Chat -> Live WebSocket (Harness): '{text}'")
+            self.on_text_command(text)
+            return
+        
         thread = threading.Thread(target=self._process_message, args=(text, images_json, texts_json), daemon=True)
         self._agent_thread = thread
         thread.start()
 
     @Slot()
     def stopProcessing(self):
+        print("[HUD] ✋ Stop / Interrupt requested by user")
         self._stop_flag.set()
-        import stop
-        stop.request_stop()
-        if self._agent:
-            self._agent.stop_requested = True
-        if hasattr(self, "_main_agent") and self._main_agent:
-            self._main_agent.stop_requested = True
         
-        # Interruption of voice/audio playback
+        # Soft-interrupt Live session — keep websocket alive for reuse
+        # instead of closing it so next message still routes through Live
+        self._live_interrupted = True
+        self._turn_complete_received = True  # Prevent audio player from emitting "thinking" on timeout
         self._drain_audio_queue()
         self._voice_responding = False
         self._voice_mic_paused = False
+        self._voice_input_transcript = ""
+        self._voice_output_transcript = ""
         self.voiceStateChanged.emit("listening")
-        
-        # Interruption of Live session connection if active to stop voice stream generation
-        if self._live_session and getattr(self, "_voice_loop", None):
+
+        import queue
+        if hasattr(self, "_cmd_queue") and self._cmd_queue:
+            while not self._cmd_queue.empty():
+                try:
+                    self._cmd_queue.get_nowait()
+                except Exception:
+                    break
+
+        if hasattr(self, "_jarvis_instance") and self._jarvis_instance:
             try:
-                import asyncio
-                asyncio.run_coroutine_threadsafe(self._live_session.close(), self._voice_loop)
-            except Exception as e:
-                print(f"[HUD] Error closing live session on stop: {e}")
-                
+                self._jarvis_instance.interrupt()
+            except Exception:
+                pass
+
+        self._set_processing(False)
         self.statusChanged.emit("idle", "Ready")
         self.phaseChanged.emit("", "")
+
+    @Slot()
+    def triggerInterrupt(self):
+        self.stopProcessing()
         self._set_processing(False)
         
-        # Finalize the message bubble with a stopped indicator
+        # Only finalize with stopped indicator for background agent (non-Live) responses.
+        # For Live WebSocket responses, the partial text is already streamed via
+        # assistantResponseChunk, so we keep it visible instead of overwriting it.
         if hasattr(self, "_current_revealed_text") and self._current_revealed_text:
             stopped_text = self._current_revealed_text + " <br><em style='color: #FF4444;'>[Response stopped by user]</em>"
-        else:
-            stopped_text = "<em style='color: #FF4444;'>[Response stopped by user]</em>"
-        self.assistantResponse.emit(stopped_text)
+            self.assistantResponse.emit(stopped_text)
 
     @Slot()
     def toggleVoiceMode(self):
@@ -1005,12 +1205,12 @@ class HUDBridge(QObject):
 
     def _start_gemini_live(self):
         """Start Gemini Live voice session in a background thread."""
-        # Guard: don't start if already running and not requested to stop
-        if self._voice_thread and self._voice_thread.is_alive() and not self._voice_stop.is_set():
+        voice_thread = getattr(self, "_voice_thread", None)
+        if voice_thread and voice_thread.is_alive() and not self._voice_stop.is_set():
             print("[HUD] Voice session already running — skipping start")
             return
 
-        old_thread = self._voice_thread
+        old_thread = voice_thread
 
         def _loop_with_wait():
             if old_thread and old_thread.is_alive():
@@ -1380,126 +1580,22 @@ class HUDBridge(QObject):
             reconnect_delay = 1
             while not self._voice_stop.is_set():
                 try:
-                    # ── Rebuild tool list on every (re)connect ──
-                    # This allows emergency tools to appear/disappear dynamically
+                    # ── Build tool declarations from main.TOOL_DECLARATIONS ──
+                    from main import TOOL_DECLARATIONS as ALL_DECLS
                     voice_func_decls = []
-
-                    # 1. Add Call Agent declaration
-                    call_agent_decl = types.FunctionDeclaration(
-                        name="call_agent",
-                        description=(
-                            "Use this tool ONLY when the user wants to PERFORM A COMPLEX TASK: "
-                            "searching the web, taking screenshots, browser control/scraping, "
-                            "writing/editing code files, executing shell commands, or any multi-step "
-                            "action that requires reasoning, planning, and screen observation. "
-                            "Do NOT use for simple actions (like opening apps, media/volume control, todo, memory, weather, reminder) "
-                            "or simple conversational chat — answer those yourself."
-                        ),
-                        parameters=types.Schema(
-                            type=types.Type.OBJECT,
-                            properties={
-                                "prompt": types.Schema(
-                                    type=types.Type.STRING,
-                                    description=(
-                                        "The user's complex task as a clear instruction. "
-                                        "Include all necessary details."
-                                    )
-                                )
-                            },
-                            required=["prompt"]
-                        )
-                    )
-                    voice_func_decls.append(call_agent_decl)
-
-                    # 2. Add native tools from config dynamically, excluding heavy/vision ones
-                    from config import TOOL_DECLARATIONS as ALL_DECLS, EXCLUDED_LIVE_TOOLS
-
                     for decl in ALL_DECLS:
-                        name = decl["name"]
-                        if name not in EXCLUDED_LIVE_TOOLS and name != "call_agent":
-                            try:
-                                func_obj = HUDBridge._dict_to_func_decl(decl)
-                                voice_func_decls.append(func_obj)
-                            except Exception as e:
-                                print(f"[HUD] Failed to convert tool {name}: {e}")
-
-                    # 3. EMERGENCY TOOL BORROWING — inject only when agent is dead due to API
-                    if self._agent_dead_due_to_api:
-                        print("[HUD] 🚨 EMERGENCY MODE: Injecting list_emergency_tools & borrow_tool into Live session")
-                        emergency_list_decl = types.FunctionDeclaration(
-                            name="list_emergency_tools",
-                            description=(
-                                "List all background agent tools available for emergency borrowing. "
-                                "Use this to see what tools you can borrow when the agent is down."
-                            ),
-                            parameters=types.Schema(
-                                type=types.Type.OBJECT,
-                                properties={},
-                            )
-                        )
-                        emergency_borrow_decl = types.FunctionDeclaration(
-                            name="borrow_tool",
-                            description=(
-                                "Borrow and execute a background agent tool directly. "
-                                "Call with just tool_name to get the tool's guide/schema. "
-                                "Call with tool_name and tool_args_json to execute it. "
-                                "You may call this multiple times in one turn to borrow multiple tools."
-                            ),
-                            parameters=types.Schema(
-                                type=types.Type.OBJECT,
-                                properties={
-                                    "tool_name": types.Schema(
-                                        type=types.Type.STRING,
-                                        description="The name of the agent tool to borrow (e.g. 'web_search', 'file_control', 'input_control')"
-                                    ),
-                                    "tool_args_json": types.Schema(
-                                        type=types.Type.STRING,
-                                        description="JSON string of arguments to pass to the tool. Leave empty to get the tool's guide/schema first."
-                                    )
-                                },
-                                required=["tool_name"]
-                            )
-                        )
-                        voice_func_decls.append(emergency_list_decl)
-                        voice_func_decls.append(emergency_borrow_decl)
+                        try:
+                            func_obj = HUDBridge._dict_to_func_decl(decl)
+                            voice_func_decls.append(func_obj)
+                        except Exception as e:
+                            print(f"[HUD] Failed to convert tool {decl.get('name')}: {e}")
 
                     voice_tools = types.Tool(function_declarations=voice_func_decls)
-                    emergency_label = " [🚨 EMERGENCY MODE]" if self._agent_dead_due_to_api else ""
-                    print(f"[HUD] Voice mode: {len(voice_func_decls)} tools loaded natively{emergency_label}")
+                    print(f"[HUD] Voice mode: {len(voice_func_decls)} native tools loaded (0 call_agent)")
 
-                    # Dynamically compile session context and instruction on each connection
-                    session_context = self._compile_session_context()
-                    import platform
-                    base_instruction = (
-                        "You are IRA — Revant's AI assistant by Nagchetra Labs. "
-                        "Female persona. Speak as 'main'/'mein'. Hinglish. "
-                        "Keep replies SHORT (1-2 sentences max). No markdown.\n\n"
-                        f"SYSTEM RUNTIME CONTEXT:\n"
-                        f"- Operating System: {platform.system()} ({platform.release()})\n\n"
-                        "EXPRESSING EMOTIONS:\n"
-                        "You can control your avatar's physical animation and facial expression by calling the change_avatar_expression tool. "
-                        "Use it contextually in conversations:\n"
-                        "- Call with 'giggling' when laughing, telling jokes, or teasing.\n"
-                        "- Call with 'blushing' when complimented or praised.\n"
-                        "- Call with 'sad' when user complains, says they feel lonely, ignores you, or tells sad news.\n"
-                        "- Call with 'smirking' when being playful, smart, teasing, or sarcastic.\n"
-                        "- Call with 'shocked' when surprised.\n"
-                        "- Call with 'angry' when insulted.\n"
-                        "- Call with 'facepalm' if you make a mistake or user says something silly.\n"
-                        "- Call with 'happy' for general happy/friendly reactions.\n"
-                        "Call this tool concurrently alongside your spoken replies to make your reactions feel alive.\n\n"
-                        "CRITICAL RULE ON TOOL CALLING:\n"
-                        "- Do NOT call any tools for greetings, casual chat, conversational questions, or banter. Just talk directly.\n"
-                        "- Only call tools if the user is asking you to perform a specific action on the computer.\n"
-                        "- Never invent or hallucinate actions that are not in the predefined allowed enums for tools. For example, system_control only accepts actions like 'open_app', 'run_command', etc. Never call system_control(action='get_Revant') or any other non-existent action.\n\n"
-                        "HOW TO HANDLE REQUESTS:\n"
-                        "1. CONVERSATIONS, MATH, AND BANTER: If the user is chatting, asking questions, or requesting simple math/calculations (e.g. 'what is 2+2-2 divided by 2'), answer it DIRECTLY yourself. Do NOT call call_agent.\n\n"
-                        "2. SINGLE TOOL CALL LIMITATION: You can only execute ONE tool call per turn. If you think the task requires multiple tool calls, you MUST delegate the entire task to the background agent by calling call_agent.\n\n"
-                        "3. SIMPLE ACTIONS: Use native tools (system_control, control_servo, change_avatar_expression, change_hologram_theme, collapse_hud, expand_hud, wait, activate_reasoning) directly to fulfill simple requests like checking volume, rotating the servo motor, changing your own expressions/color theme, or collapsing/expanding the HUD overlay. Use collapse_hud and expand_hud ONLY when the user explicitly asks to collapse, minimize, expand, or show the HUD. Do NOT call call_agent for these.\n\n"
-                        "4. DELEGATED COMPLEX TASKS, MEDIA, SEARCH & SCREEN VISION: If the request requires any tools not in your native list (like file_control, browser_control, input_control, screen_control, todo_control, send_whatsapp, map_control, node_control, media_generation, web_search, weather_control, memory_control, clipboard_control), or if the task is complex, you MUST call the call_agent tool. Do NOT try to guess paths or perform web searches yourself. Instead, delegate by calling call_agent(prompt='...'). For screen inspection, always call call_agent(prompt='Take a screenshot of the current screen and analyze it to answer the user').\n\n"
-                        "5. ALERTS / REMINDERS: If you receive a [SYSTEM_ALERT] containing a user reminder, announce it dynamically to the user in a natural, caring, and playful Hinglish tone.\n\n"
-                        "Be natural, be brief, be helpful. Hinglish mein baat karo."
-                    )
+                    # System Prompt using IRA Swaggy Persona
+                    from main import _load_system_prompt
+                    base_instruction = _load_system_prompt()
 
                     # Inject emergency mode instructions into system prompt
                     if self._agent_dead_due_to_api:
@@ -1517,6 +1613,7 @@ class HUDBridge(QObject):
                             "- Then call borrow_tool(tool_name, tool_args_json) with the correct arguments to execute it.\n"
                         )
 
+                    session_context = self._compile_session_context()
                     if session_context:
                         base_instruction += f"\n\nRECENT CONVERSATION HISTORY (for context — the user may refer to these):\n{session_context}"
 
@@ -1567,6 +1664,7 @@ class HUDBridge(QObject):
                     print(f"[HUD] Connecting to Gemini Live ({LIVE_AUDIO_MODEL})...")
                     async with client.aio.live.connect(model=LIVE_AUDIO_MODEL, config=live_config) as session:
                         self._live_session = session
+                        self._live_interrupted = False
                         self._voice_mic_paused = not self._voice_mode
                         self._voice_responding = False
                         self._voice_input_transcript = ""
@@ -1593,6 +1691,7 @@ class HUDBridge(QObject):
                         
                         if should_send:
                             print("[HUD] Speaking pending startup briefing...")
+                            self._live_interrupted = False
                             self._last_input_source = "text"
                             self._set_processing(True)
                             self.statusChanged.emit("thinking", "Thinking")
@@ -1681,6 +1780,23 @@ class HUDBridge(QObject):
         """Handle a single response from Gemini Live."""
         from google.genai import types
 
+        # If user interrupted this turn, discard all chunks until turn_complete
+        # This keeps the websocket alive for the next message instead of destroying it
+        if getattr(self, "_live_interrupted", False):
+            server_content = response.server_content
+            if server_content and server_content.turn_complete:
+                self._live_interrupted = False
+                self._voice_input_transcript = ""
+                self._voice_output_transcript = ""
+                self._voice_responding = False
+                self._voice_mic_paused = False
+                self.voiceStateChanged.emit("listening")
+                self._set_processing(False)
+                self.statusChanged.emit("idle", "Ready")
+                self.phaseChanged.emit("", "")
+                print("[HUD] Interrupted turn complete — session kept alive for reuse")
+            return
+
         server_content = response.server_content
 
         # Handle GoAway — server is about to close the connection
@@ -1701,6 +1817,9 @@ class HUDBridge(QObject):
                 self._voice_resumption_handle = update.new_handle
                 print(f"[HUD] Stored session resumption handle: {update.new_handle}")
 
+        # Track tool calls for this response so turn_complete knows whether to save history
+        had_tool_calls = False
+
         if server_content:
             # Handle interruption — clear playback queue
             if server_content.interrupted:
@@ -1720,10 +1839,16 @@ class HUDBridge(QObject):
 
             # Output transcription — what IRA is saying
             if server_content.output_transcription and server_content.output_transcription.text:
-                self._voice_output_transcript += server_content.output_transcription.text
-                self.voiceResponseChunk.emit(server_content.output_transcription.text)
+                chunk_text = server_content.output_transcription.text
+                self._voice_output_transcript += chunk_text
+                
+                # Strip text-based tool calls from real-time streaming
+                cleaned_chunk = self._clean_text_tools(chunk_text, execute=False)
+                self.voiceResponseChunk.emit(cleaned_chunk)
+                
                 if getattr(self, "_last_input_source", "voice") == "text":
-                    self.assistantResponseChunk.emit(self._voice_output_transcript)
+                    cleaned_accumulated = self._clean_text_tools(self._voice_output_transcript, execute=False)
+                    self.assistantResponseChunk.emit(cleaned_accumulated)
 
             # Audio response — queue for playback
             if server_content.model_turn:
@@ -1743,9 +1868,9 @@ class HUDBridge(QObject):
                             self._audio_queue.put_nowait(part.inline_data.data)
 
             # Turn complete — save transcripts to internal history, resume mic
-            if server_content.turn_complete:
+            if server_content.turn_complete and not had_tool_calls:
                 user_text = self._voice_input_transcript.strip()
-                ira_text = self._voice_output_transcript.strip()
+                ira_text = self._clean_text_tools(self._voice_output_transcript.strip(), execute=True)
                 
                 # Compute average pitch
                 avg_pitch = 0.0
@@ -1811,6 +1936,7 @@ class HUDBridge(QObject):
                         print("[HUD] 🚨 Emergency turn complete — revoking borrowed tools and reconnecting to normal mode")
                         self._agent_dead_due_to_api = False
                         self._emergency_reconnect_pending = False
+                        self._live_interrupted = False
                         # Send a revocation notification before closing
                         try:
                             if self._live_session:
@@ -1835,46 +1961,20 @@ class HUDBridge(QObject):
                     print("[HUD] Turn complete received, but audio is still playing. Mic unmute deferred.")
 
         # Handle tool calls from Gemini
+        had_tool_calls = False
         if response.tool_call:
-            # Check if we have call_agent (which is a heavy tool)
-            has_heavy_tool = any(fc.name == "call_agent" for fc in response.tool_call.function_calls)
-            
-            if has_heavy_tool:
-                # Always pause the mic and play transitional phrase for heavy tool calls
-                self._voice_mic_paused = True
-                import time
-                self._mic_paused_timestamp = time.time()
-                self.voiceStateChanged.emit("thinking")
-                self._play_random_phrase()
-            
+            had_tool_calls = True
+            self._set_processing(True)
+            self.voiceStateChanged.emit("thinking")
             function_responses = []
             for fc in response.tool_call.function_calls:
                 print(f"[HUD] Tool call: {fc.name}({fc.args})")
                 try:
-                    if fc.name in ("call_agent", "agent"):
-                        # Delegate to main IRA pipeline (Gemini 3.5 Flash + all tools)
-                        prompt = (fc.args or {}).get("prompt", "")
-                        result = await self._call_main_agent(prompt)
-                    elif fc.name == "list_emergency_tools":
-                        # Emergency mode: list all borrowable agent tools
-                        print("[HUD] 🚨 Emergency: listing agent tools")
-                        result = self._list_emergency_tools()
-                    elif fc.name == "borrow_tool":
-                        # Emergency mode: borrow and execute an agent tool directly
-                        tool_name = (fc.args or {}).get("tool_name", "")
-                        tool_args_json = (fc.args or {}).get("tool_args_json", "")
-                        print(f"[HUD] 🚨 Emergency: borrowing tool '{tool_name}'")
-                        loop = asyncio.get_running_loop()
-                        result = await loop.run_in_executor(
-                            None, lambda: self._borrow_tool(tool_name, tool_args_json)
-                        )
-                    else:
-                        # Execute simple tools natively in thread pool
-                        from tools import execute_tool
-                        loop = asyncio.get_running_loop()
-                        result = await loop.run_in_executor(
-                            None, lambda: execute_tool(fc.name, fc.args or {}, event_callback=self._background_agent_callback)
-                        )
+                    from tools import execute_tool
+                    loop = asyncio.get_running_loop()
+                    result = await loop.run_in_executor(
+                        None, lambda: execute_tool(fc.name, fc.args or {}, event_callback=getattr(self, "_background_agent_callback", None))
+                    )
                 except Exception as e:
                     result = f"Error: {e}"
                 
@@ -1887,133 +1987,18 @@ class HUDBridge(QObject):
             session = self._live_session
             if session:
                 await session.send_tool_response(function_responses=function_responses)
-                if not has_heavy_tool:
-                    self._turn_complete_received = True
-                    if getattr(self, "_last_input_source", "voice") == "text":
-                        self._set_processing(False)
-                        self.statusChanged.emit("idle", "Ready")
-                    
-                    if not self._voice_responding and (self._audio_queue is None or self._audio_queue.empty()):
-                        self._voice_mic_paused = False
-                        self.voiceStateChanged.emit("listening")
-                        print("[HUD] Native tool response sent — mic unpaused immediately (no active audio).")
-                    else:
-                        print("[HUD] Native tool response sent — turn_complete_received set (audio still playing).")
+                self._turn_complete_received = True
+                # Keep processing True until final text turn_complete
+                
+                if not self._voice_responding and (self._audio_queue is None or self._audio_queue.empty()):
+                    self._voice_mic_paused = False
+                    self.voiceStateChanged.emit("listening")
+                    print("[HUD] Tool response sent — mic unpaused immediately.")
                 else:
-                    # For heavy tools like call_agent, the agent result is rendered inside the Purple Agent Box.
-                    # We log the history and prompt Gemini Live to speak/generate IRA's final response turn.
-                    result_str = str(result)
-                    if getattr(self, "_last_input_source", "voice") == "text":
-                        self.add_message("assistant", result_str)
-                        self._internal_session_history.append(
-                            {"role": "assistant", "source": "text", "text": result_str}
-                        )
-                        self._activity_logs.append({
-                            "timestamp": datetime.datetime.now().isoformat(),
-                            "message": f"🤖 Agent Result: {result_str}"
-                        })
-                        self.requestAutoSave.emit()
-                        self._set_processing(False)
-                        self.statusChanged.emit("idle", "Ready")
-
-                    # Force the Live model to announce the final agent result
-                    prompt_to_speak = f"The agent has completed the request. Here is the result:\n{result_str}\n\nSpeak/explain this result to the user in Hinglish."
-                    await session.send_client_content(
-                        turns=[types.Content(role="user", parts=[types.Part(text=prompt_to_speak)])],
-                        turn_complete=True
-                    )
-
-                    # If emergency mode was just triggered, close the session to force
-                    # a reconnect with emergency tools injected into the tool list
-                    if self._agent_dead_due_to_api and not self._emergency_reconnect_pending:
-                        self._emergency_reconnect_pending = True
-                        print("[HUD] 🚨 Emergency reconnect: closing session to inject emergency tools...")
-                        # Small delay to let the model finish speaking the alert
-                        await asyncio.sleep(3)
-                        if self._live_session:
-                            await self._live_session.close()
-                            print("[HUD] 🚨 Session closed for emergency reconnect")
+                    print("[HUD] Tool response sent — turn_complete_received set.")
 
 
-    async def _call_main_agent(self, prompt: str) -> str:
-        """Delegate to main IRA agent (Gemini 3.5 Flash + all tools + screenshots)."""
-        try:
-            self._set_processing(True)
-            self.statusChanged.emit("thinking", "Thinking")
-            from gemini import GeminiAgent
-            import stop
-            stop.reset_stop() # Reset global stop flag
-            
-            if not hasattr(self, '_main_agent') or self._main_agent is None:
-                print("[HUD] Creating main IRA agent for call_agent tool...")
-                self._main_agent = GeminiAgent(event_callback=self._background_agent_callback)
-            else:
-                self._main_agent.event_callback = self._background_agent_callback
-            
-            # Reset stop flags on agents
-            self._main_agent.stop_requested = False
-            if self._agent:
-                self._agent.stop_requested = False
-                
-            agent = self._main_agent
 
-            # Inject session context so the agent knows what was discussed
-            session_context = self._compile_session_context()
-            context_mode = getattr(self, "_context_mode", "default")
-            enriched_prompt = f"[Context Mode: {context_mode}]\n{prompt}"
-            avg_pitch = getattr(self, "_last_user_pitch", 0.0)
-            speaker_label = getattr(self, "_last_speaker_label", "Revant")
-            if avg_pitch > 0.0:
-                enriched_prompt = f"[Context Mode: {context_mode}]\n{prompt} (Voice Pitch: {avg_pitch:.1f} Hz, Speaker: {speaker_label})"
-                
-            # Inject scene state if available
-            scene_state = getattr(self, "_latest_scene_state", None)
-            if scene_state:
-                scene_meta = (
-                    f"\n\n[Ambient Scene State]:\n"
-                    f"- Location: {scene_state.get('location', 'Unknown')}\n"
-                    f"- Owner Present (Revant): {'Yes' if scene_state.get('owner_present') else 'No'}\n"
-                    f"- Others Nearby: {scene_state.get('others_present', 0)}\n"
-                    f"- Active Activity: {scene_state.get('activity', 'Unknown')}\n"
-                    f"- Summary: {scene_state.get('summary', 'No summary.')}"
-                )
-                enriched_prompt += scene_meta
-
-            if session_context:
-                enriched_prompt += f"\n\n[Internal Conversation History (for context)]:\n{session_context}"
-                print(f"[HUD] call_agent tool: Injected {len(self._internal_session_history)} turns of internal conversation history into background agent call.")
-            else:
-                print("[HUD] call_agent tool: No internal history to inject.")
-
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, lambda: agent.send(enriched_prompt, with_screenshot=True))
-            print(f"[HUD] Agent response ({len(result)} chars): {result[:100]}...")
-            return result
-        except Exception as e:
-            print(f"[HUD] call_agent error: {e}")
-            # Check if this is a rate-limit / quota exhaustion error
-            if HUDBridge._is_rate_limit_error(e):
-                print("[HUD] 🚨 RATE LIMIT DETECTED — Triggering emergency borrowing mode")
-                self._agent_dead_due_to_api = True
-                # Return a special system alert that tells the model about emergency tools
-                # The session will be reconnected (with emergency tools injected) after this turn completes
-                return (
-                    "[SYSTEM ALERT]\n"
-                    "The background agent is unavailable because its API quota has been exhausted.\n"
-                    "Emergency borrowing mode is now being enabled.\n"
-                    "The session will reconnect momentarily with emergency tools available.\n"
-                    "You will then be able to:\n"
-                    "1. list_emergency_tools() — View available agent tools\n"
-                    "2. borrow_tool(tool_name, tool_args_json) — Execute agent tools directly\n"
-                    "You may borrow multiple tools during the NEXT TURN ONLY.\n"
-                    "Borrow only the minimum tools required.\n"
-                    "Normal operation will resume after that turn.\n"
-                    "Tell the user that the agent is temporarily down but you can still help using borrowed tools."
-                )
-            return f"Agent error: {e}"
-        finally:
-            self._set_processing(False)
-            self.statusChanged.emit("idle", "Ready")
 
 
     @staticmethod
@@ -2381,7 +2366,6 @@ class HUDBridge(QObject):
                     "timestamp": datetime.datetime.now().isoformat(),
                     "message": f"🤖 IRA: {briefing}"
                 })
-                self.requestAutoSave.emit()
                 
                 html = _md_to_html(briefing)
                 self._streamReadySignal.emit(html)
@@ -2403,8 +2387,10 @@ class HUDBridge(QObject):
 
     def _speak_proactive(self, text: str):
         """Speak proactive message using Gemini Live if active, falling back to SAPI."""
+        self._last_proactive_speech_time = time.monotonic()
         if self._live_session and getattr(self, "_voice_loop", None):
             print(f"[HUD] Sending proactive alert via Live WebSocket: '{text}'")
+            self._live_interrupted = False  # Clear any previous interrupt
             self._last_input_source = "text"
             self._set_processing(True)
             self.statusChanged.emit("thinking", "Thinking")
@@ -2507,6 +2493,11 @@ class HUDBridge(QObject):
     def clearHotspots(self):
         """Clear all registered hotspots."""
         self._hotspot_rects.clear()
+
+    @Slot(str)
+    def setVoiceState(self, state: str):
+        """Update voice state indicator on QML HUD."""
+        self.voiceStateChanged.emit(str(state).lower())
 
     @Slot()
     def refreshHotspots(self):
@@ -2788,6 +2779,11 @@ class HUDBridge(QObject):
             config.REASONING_MODE = reasoning_enabled
             config.REASONING_LEVEL = reasoning_level
             print(f"[HUD] Reasoning mode: {'ON' if reasoning_enabled else 'OFF'} (level: {reasoning_level})")
+
+            # Apply Chrome CDP Always-On setting
+            cdp_always_on = settings.get("cdp", {}).get("always_on", True)
+            from settings_manager import toggle_chrome_cdp_always_on
+            toggle_chrome_cdp_always_on(cdp_always_on)
         except Exception as e:
             print(f"[HUD] Error applying settings: {e}")
 
@@ -2803,7 +2799,8 @@ class HUDBridge(QObject):
 
     def is_in_hotspot(self, cursor_x: int, cursor_y: int) -> bool:
         """Check if cursor is inside any registered hotspot."""
-        for rx, ry, rw, rh in self._hotspot_rects:
+        rects = getattr(self, "_hotspot_rects", [])
+        for rx, ry, rw, rh in rects:
             if rx <= cursor_x <= rx + rw and ry <= cursor_y <= ry + rh:
                 return True
         return False
@@ -2896,6 +2893,103 @@ class HUDBridge(QObject):
         # Start background Scene Analyzer
         threading.Thread(target=self._scene_analyzer_loop, daemon=True).start()
 
+        # Start Proactive Engine (AI Speaks First When Idle)
+        def _proactive_loop():
+            try:
+                from actions.proactive import ProactiveEngine
+                from memory.memory_manager import load_memory
+                engine = ProactiveEngine()
+                time.sleep(15)
+                while not self._stop_flag.is_set():
+                    time.sleep(15)
+                    if not self._live_session or getattr(self, "_voice_responding", False):
+                        continue
+                    # Don't speak if we just spoke proactively within last 3 minutes
+                    last_proactive = getattr(self, "_last_proactive_speech_time", 0.0)
+                    if time.monotonic() - last_proactive < 180:
+                        continue
+                    last_speech = getattr(self, "_last_user_speech_time", time.monotonic())
+                    if engine.should_trigger(last_speech):
+                        engine.mark_triggered()
+                        try:
+                            mem = load_memory()
+                            calendar_events = []
+                            overdue_items = []
+                            try:
+                                from actions.calendar import get_calendar_manager
+                                cal_mgr = get_calendar_manager()
+                                upcoming = cal_mgr.upcoming(within_hours=12)
+                                for ev in upcoming:
+                                    title = ev.get("title") or ev.get("message") or "Event"
+                                    etype = ev.get("event_type", "reminder")
+                                    occ = ev.get("occurrence_start", "")
+                                    calendar_events.append(f"{title} ({etype}) at {occ}")
+                                overdue_items = [f"{e.get('title', 'Event')} ({e.get('event_type', 'reminder')})" for e in cal_mgr.overdue()]
+                            except Exception:
+                                pass
+                            prompt = engine.build_prompt(
+                                memory=mem,
+                                recent_turns=getattr(self, "_internal_session_history", [])[-6:],
+                                calendar_events=calendar_events,
+                                overdue_items=overdue_items,
+                            )
+                            print(f"[HUD Proactive] 💡 Triggering proactive speech via Live session...")
+                            loop = getattr(self, "_voice_loop", None)
+                            if loop and self._live_session:
+                                self._live_interrupted = False
+                                from google.genai import types
+                                coro = self._live_session.send_client_content(
+                                    turns=[types.Content(role="user", parts=[types.Part(text=prompt)])],
+                                    turn_complete=True
+                                )
+                                asyncio.run_coroutine_threadsafe(coro, loop)
+                                self._last_proactive_speech_time = time.monotonic()
+                        except Exception as e:
+                            print(f"[HUD Proactive] Inner error: {e}")
+            except Exception as e:
+                print(f"[HUD Proactive] Thread error: {e}")
+
+        threading.Thread(target=_proactive_loop, daemon=True).start()
+
+        # Start Calendar Scheduler — checks due events every 30s and fires proactive alerts
+        def _calendar_scheduler():
+            try:
+                from actions.calendar import get_calendar_manager
+                mgr = get_calendar_manager()
+                last_check = 0.0
+                while not self._stop_flag.is_set():
+                    now = time.time()
+                    if now - last_check >= 30:
+                        last_check = now
+                        try:
+                            now_dt = datetime.datetime.now()
+                            upcoming = mgr.upcoming(within_hours=2)
+                            for ev in upcoming:
+                                occ_str = ev.get("occurrence_start") or ev.get("next_occurrence")
+                                if not occ_str:
+                                    continue
+                                try:
+                                    occ_dt = datetime.datetime.fromisoformat(occ_str)
+                                except ValueError:
+                                    continue
+                                diff = (occ_dt - now_dt).total_seconds()
+                                if 0 < diff <= 600:
+                                    title = ev.get("title") or ev.get("message") or "Event"
+                                    etype = ev.get("event_type", "reminder")
+                                    mins = int(diff // 60)
+                                    label = f"{title} ({etype}) starts in {mins} minutes"
+                                    if hasattr(self, "_last_calendar_announce") and self._last_calendar_announce == label:
+                                        continue
+                                    self._last_calendar_announce = label
+                                    self._speak_proactive(f"Aapke {etype} '{title}' {mins} minute mein shuru hone wala hai.")
+                        except Exception as e:
+                            print(f"[Calendar Scheduler] Error: {e}")
+                    time.sleep(5)
+            except Exception as e:
+                print(f"[Calendar Scheduler] Thread error: {e}")
+
+        threading.Thread(target=_calendar_scheduler, daemon=True).start()
+
     def _scene_analyzer_loop(self):
         """Periodically analyze webcam scene using Gemini Vision to update room context."""
         import time
@@ -2950,70 +3044,64 @@ class HUDBridge(QObject):
                                     self._latest_scene_state = data
                                     print(f"[SCENE] Ambient room update: {data.get('summary')}")
                                     last_analysis_time = now
-                                    last_faces = faces
                                 except Exception as json_err:
                                     print(f"[SCENE] JSON Parse error: {json_err}. Text: {text[:100]}")
             except Exception as e:
-                print(f"[SCENE] Background scene error: {e}")
+                err_str = str(e)
+                if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
+                    # Sleep longer on rate limits to avoid console log spamming
+                    time.sleep(60)
+                else:
+                    print(f"[SCENE] Background scene error: {e}")
+                    time.sleep(15)
             time.sleep(12)
 
     def _setup_active_window_listener(self):
         """Set up active window hook to track application switches in real time."""
         def _register_hook():
-            try:
-                import uiautomation as auto
-                import time
-                
-                # Wait for system startup
-                time.sleep(2)
-                
-                def on_active_window_changed(control):
-                    try:
-                        if not control:
-                            return
-                        name = getattr(control, "Name", "").lower()
-                        class_name = getattr(control, "ClassName", "").lower()
-                        process_name = ""
-                        try:
-                            import psutil
-                            proc = psutil.Process(control.ProcessId)
-                            process_name = proc.name().lower()
-                        except Exception:
-                            pass
+            import time
+            import psutil
+            last_app = ""
+            while not self._stop_flag.is_set():
+                try:
+                    time.sleep(2.0)
+                    if os.name == "nt":
+                        import win32gui, win32process
+                        hwnd = win32gui.GetForegroundWindow()
+                        if hwnd:
+                            title = win32gui.GetWindowText(hwnd).lower()
+                            _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                            app = ""
+                            try:
+                                proc = psutil.Process(pid)
+                                app = proc.name().lower()
+                            except Exception:
+                                pass
                             
-                        # Update Context Mode
-                        old_mode = self._context_mode
-                        
-                        # Check process or class/name
-                        if "code" in process_name or "cursor" in process_name or "terminal" in process_name or "pycharm" in process_name:
-                            self._context_mode = "coding"
-                        elif "minecraft" in name or "steam" in name or "game" in name or "gta" in name:
-                            self._context_mode = "gaming"
-                        elif "pdf" in name or "notion" in name or "ncert" in name or "word" in name:
-                            self._context_mode = "study"
-                        else:
-                            self._context_mode = "default"
-                            
-                        if self._context_mode != old_mode:
-                            print(f"[CONTEXT] Switched context mode: {old_mode} -> {self._context_mode} (Window: {name}, App: {process_name})")
-                            self.contextModeChanged.emit(self._context_mode)
-                            if self._context_mode == "coding":
-                                self._coding_mode_start_time = time.time()
-                            else:
-                                self._coding_mode_start_time = None
-                    except Exception as err:
-                        print(f"[CONTEXT] Error handling window switch: {err}")
-                
-                auto.AddActiveWindowChangedEventHandler(on_active_window_changed)
-                print("[CONTEXT] Windows Active Window Changed Hook successfully registered.")
-                
-                # Keep thread alive to process events
-                while not self._stop_flag.is_set():
-                    time.sleep(1)
-            except Exception as e:
-                print(f"[CONTEXT] Failed to set up UIA active window hook: {e}")
-                
-        threading.Thread(target=_register_hook, daemon=True).start()
+                            if app != last_app:
+                                last_app = app
+                                old_mode = self._context_mode
+                                
+                                if any(k in app for k in ("code", "cursor", "pycharm", "wt", "cmd", "powershell")):
+                                    self._context_mode = "coding"
+                                elif any(k in title for k in ("minecraft", "steam", "game", "gta")):
+                                    self._context_mode = "gaming"
+                                elif any(k in title for k in ("pdf", "notion", "ncert", "word")):
+                                    self._context_mode = "study"
+                                else:
+                                    self._context_mode = "default"
+                                    
+                                if self._context_mode != old_mode:
+                                    print(f"[CONTEXT] Switched context mode: {old_mode} -> {self._context_mode} (App: {app})")
+                                    self.contextModeChanged.emit(self._context_mode)
+                                    if self._context_mode == "coding":
+                                        self._coding_mode_start_time = time.time()
+                                    else:
+                                        self._coding_mode_start_time = None
+                except Exception:
+                    pass
+
+        threading.Thread(target=_register_hook, name="ActiveWindowListener", daemon=True).start()
 
     def _emit_todo_list(self):
         raw = list_tasks()
@@ -3130,10 +3218,10 @@ class HUDBridge(QObject):
                 self.errorOccurred.emit(str(e))
                 self.statusChanged.emit("error", "Error")
         finally:
-            if not self._msg_queue.empty():
+            if not self._cmd_queue.empty():
                 try:
-                    next_text, next_imgs, next_txts = self._msg_queue.get_nowait()
-                    print(f"[HUD] Dequeuing next user message ({self._msg_queue.qsize()} remaining)...")
+                    next_text, next_imgs, next_txts = self._cmd_queue.get_nowait()
+                    print(f"[HUD] Dequeuing next user message ({self._cmd_queue.qsize()} remaining)...")
                     self._process_message(next_text, next_imgs, next_txts)
                 except Exception as ex:
                     print(f"[HUD] Queued message execution error: {ex}")

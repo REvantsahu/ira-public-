@@ -234,6 +234,8 @@ Window {
     readonly property int chatW: 520
     property int chatH: chatExpanded ? 540 : 340
 
+    property bool chromeCdpAlwaysOn: true
+
     // ── LOAD SETTINGS ON STARTUP ────────────────
     function loadStartupSettings() {
         try {
@@ -241,6 +243,7 @@ Window {
             autoDetectEnabled = s.location.auto_detect !== false
             gesturesEnabled = s.gestures ? (s.gestures.enabled !== false) : true
             autoScreenshotEnabled = s.screenshots ? (s.screenshots.auto_screenshot !== false) : true
+            chromeCdpAlwaysOn = s.cdp ? (s.cdp.always_on !== false) : true
             root.showAvatar = s.avatar ? (s.avatar.enabled !== false) : true
             var theme = (s.avatar && s.avatar.theme) ? s.avatar.theme : "cyan"
             root.changeTheme(theme)
@@ -845,6 +848,83 @@ Window {
             }
         }
 
+        // ── FUTURISTIC HOLOGRAPHIC BOOT SPINNER ──
+        Item {
+            x: iraAvatar.x
+            y: iraAvatar.y
+            width: iraAvatar.width
+            height: iraAvatar.height
+            z: 10
+            visible: root.isBooting && root.showAvatar
+            opacity: root.isBooting ? 1.0 : 0.0
+
+            Behavior on opacity { NumberAnimation { duration: 400 } }
+
+            // Outer Neon Counter-Clockwise Arc Ring
+            Rectangle {
+                anchors.centerIn: parent
+                width: Math.min(parent.width, parent.height) * 0.75
+                height: width
+                radius: width / 2
+                color: "transparent"
+                border.color: root.themeMainColor
+                border.width: 3
+                opacity: 0.85
+
+                RotationAnimation on rotation {
+                    from: 360; to: 0
+                    duration: 1600
+                    loops: Animation.Infinite
+                    running: root.isBooting
+                }
+            }
+
+            // Inner Neon Clockwise Arc Ring
+            Rectangle {
+                anchors.centerIn: parent
+                width: Math.min(parent.width, parent.height) * 0.52
+                height: width
+                radius: width / 2
+                color: "transparent"
+                border.color: root.themeSecColor
+                border.width: 2.5
+                opacity: 0.95
+
+                RotationAnimation on rotation {
+                    from: 0; to: 360
+                    duration: 1100
+                    loops: Animation.Infinite
+                    running: root.isBooting
+                }
+            }
+
+            // Central Glowing Core Pulsing Orb
+            Rectangle {
+                anchors.centerIn: parent
+                width: 22; height: 22; radius: 11
+                color: root.themeMainColor
+                opacity: 0.9
+
+                SequentialAnimation on scale {
+                    running: root.isBooting
+                    loops: Animation.Infinite
+                    NumberAnimation { to: 1.5; duration: 500; easing.type: Easing.InOutQuad }
+                    NumberAnimation { to: 0.75; duration: 500; easing.type: Easing.InOutQuad }
+                }
+            }
+
+            // Boot Status Text
+            Text {
+                anchors.top: parent.bottom
+                anchors.topMargin: 10
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "⚡ INITIALIZING IRA AI CORE..."
+                color: root.themeMainColor
+                font { pixelSize: 10; bold: true; family: "Consolas" }
+                opacity: 0.9
+            }
+        }
+
         // Real-time Audio Visualizer Rings (behind Avatar)
         Rectangle {
             id: visualizerRing
@@ -1218,7 +1298,7 @@ Window {
                                 Column {
                                     anchors.centerIn: parent
                                     Text { anchors.horizontalCenter: parent.horizontalCenter; text: "CPU"; color: Qt.rgba(0, 1, 1, 0.4); font { pixelSize: 7; family: "Consolas" } }
-                                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: cpuVal.toFixed(0) + "%"; color: root.cpuVal > 80 ? "#FF4444" : "#FFFFFF"; font { pixelSize: 10; family: "Consolas"; bold: true } }
+                                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: root.cpuVal.toFixed(0) + "%"; color: root.cpuVal > 80 ? "#FF4444" : "#FFFFFF"; font { pixelSize: 10; family: "Consolas"; bold: true } }
                                 }
                             }
 
@@ -1252,7 +1332,7 @@ Window {
                                 Column {
                                     anchors.centerIn: parent
                                     Text { anchors.horizontalCenter: parent.horizontalCenter; text: "RAM"; color: Qt.rgba(0, 1, 1, 0.4); font { pixelSize: 7; family: "Consolas" } }
-                                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: ramVal.toFixed(0) + "%"; color: "#FFFFFF"; font { pixelSize: 10; family: "Consolas"; bold: true } }
+                                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: root.ramVal.toFixed(0) + "%"; color: "#FFFFFF"; font { pixelSize: 10; family: "Consolas"; bold: true } }
                                 }
                             }
 
@@ -1469,6 +1549,38 @@ Window {
                                 }
                                 Rectangle {
                                     x: root.showAvatar ? 19 : 1
+                                    width: 16; height: 16; radius: 8
+                                    color: "white"
+                                    Behavior on x { NumberAnimation { duration: 150 } }
+                                }
+                            }
+                        }
+
+                        // Chrome CDP Debugging Mode (Port 9222) Toggle
+                        RowLayout {
+                            spacing: 8
+                            Layout.fillWidth: true
+                            Text { text: "🌐"; font.pixelSize: 10 }
+                            Text { text: "Chrome CDP Debug (9222)"; color: Qt.rgba(0, 1, 1, 0.4); font { pixelSize: 8; family: "Consolas" } }
+                            Item { Layout.fillWidth: true }
+                            Rectangle {
+                                id: cdpToggleBtn
+                                width: 36; height: 18; radius: 9
+                                color: chromeCdpAlwaysOn ? "#00ff88" : "#333"
+                                border.color: Qt.rgba(0, 1, 1, 0.15); border.width: 1
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: {
+                                        chromeCdpAlwaysOn = !chromeCdpAlwaysOn
+                                        var settings = JSON.parse(bridge.getSettings())
+                                        if (!settings.cdp) settings.cdp = {}
+                                        settings.cdp.always_on = chromeCdpAlwaysOn
+                                        bridge.saveSettings(JSON.stringify(settings))
+                                    }
+                                }
+                                Rectangle {
+                                    x: chromeCdpAlwaysOn ? 19 : 1
                                     width: 16; height: 16; radius: 8
                                     color: "white"
                                     Behavior on x { NumberAnimation { duration: 150 } }
@@ -3817,6 +3929,7 @@ Window {
 
         Connections {
             target: bridge
+            ignoreUnknownSignals: true
             function onRequestAutoSave() {
                 bridge.autoSave(getChatModelJson(), getNodeModelJson())
             }
@@ -3843,6 +3956,7 @@ Window {
     // ═══════════════════════════════════════════════
     Connections {
         target: bridge
+        ignoreUnknownSignals: true
 
         function onDockExpansionRequested(expanded) {
             dockExpanded = expanded
@@ -3938,6 +4052,7 @@ Window {
         }
 
         function onStatusChanged(state, label) {
+            if (isBooting && state !== "offline") isBooting = false
             stateText = label
             var cmap = { "idle": "#00ff88", "thinking": "#ffaa00", "tool": "#00FFFF", "error": "#ff4444", "capturing": "#ffaa00", "voice": "#00FFFF" }
             stateColor = cmap[state] || "#888888"
@@ -4074,6 +4189,11 @@ Window {
                 stateText = "🔧 " + name
                 stateColor = "#00FFFF"
                 appendToolMessage(name, argsText || "")
+            }
+            if (isVoiceMode && !chatPopupShown) {
+                chatPopupShown = true
+                registerHotspots()
+                hotspotTimer.start()
             }
             chatListView.smartScroll()
         }
@@ -4301,6 +4421,7 @@ Window {
     // Memory + Todo list from bridge
     Connections {
         target: bridge
+        ignoreUnknownSignals: true
         function onMemoryListUpdated(jsonStr) {
             memoryModel.clear()
             var files = JSON.parse(jsonStr)

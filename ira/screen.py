@@ -23,6 +23,10 @@ if os.name == "nt":
 # Max width for screenshots sent to Gemini API (token efficiency)
 MAX_SCREENSHOT_WIDTH = 1920
 
+# Screenshot scaling tracking for coordinate conversion
+LAST_SCALE_X = 1.0
+LAST_SCALE_Y = 1.0
+
 # Optional callbacks for GUI thread synchronization (e.g. to hide/show overlay window)
 PRE_SCREENSHOT_CALLBACK = None
 POST_SCREENSHOT_CALLBACK = None
@@ -36,6 +40,8 @@ def take_screenshot(annotate: bool = False) -> tuple[bytes, str]:
     Returns raw PNG bytes (NOT base64) for direct use with
     types.Part.from_bytes(data=..., mime_type="image/png").
     """
+    global LAST_SCALE_X, LAST_SCALE_Y
+
     if PRE_SCREENSHOT_CALLBACK:
         try:
             PRE_SCREENSHOT_CALLBACK()
@@ -68,7 +74,13 @@ def take_screenshot(annotate: bool = False) -> tuple[bytes, str]:
     w, h = img.size
     if w > MAX_SCREENSHOT_WIDTH:
         ratio = MAX_SCREENSHOT_WIDTH / w
-        img = img.resize((MAX_SCREENSHOT_WIDTH, int(h * ratio)), Image.LANCZOS)
+        target_h = int(h * ratio)
+        img = img.resize((MAX_SCREENSHOT_WIDTH, target_h), Image.LANCZOS)
+        LAST_SCALE_X = w / float(MAX_SCREENSHOT_WIDTH)
+        LAST_SCALE_Y = h / float(target_h)
+    else:
+        LAST_SCALE_X = 1.0
+        LAST_SCALE_Y = 1.0
 
     # Save to temp file
     tmp = Path(tempfile.gettempdir()) / "ira_screenshot.png"

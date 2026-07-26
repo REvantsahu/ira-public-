@@ -305,14 +305,12 @@ class _VisionSession:
                 print("[Vision] ⚠️  No session — dropping image")
                 continue
             try:
-                b64 = base64.b64encode(image_bytes).decode("ascii")
+                from google.genai import types
                 await self._session.send_client_content(
-                    turns={
-                        "parts": [
-                            {"inline_data": {"mime_type": mime_type, "data": b64}},
-                            {"text": user_text},
-                        ]
-                    },
+                    turns=[types.Content(role="user", parts=[
+                        types.Part(inline_data=types.Blob(mime_type=mime_type, data=image_bytes)),
+                        types.Part(text=user_text),
+                    ])],
                     turn_complete=True,
                 )
                 print(f"[Vision] 📤 Sent {len(image_bytes):,} bytes — '{user_text[:60]}'")

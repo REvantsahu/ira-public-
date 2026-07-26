@@ -41,6 +41,15 @@ DEFAULT_SETTINGS = {
     "avatar": {
         "enabled": True,
     },
+    "gestures": {
+        "enabled": False,
+        "system_control": True,
+        "smoothing": 0.7,
+        "skeleton": True,
+    },
+    "cdp": {
+        "always_on": True,
+    },
 }
 
 
@@ -219,6 +228,8 @@ def load_settings() -> dict:
     settings.setdefault("gestures", dict(DEFAULT_SETTINGS["gestures"]))
     settings.setdefault("reasoning", dict(DEFAULT_SETTINGS["reasoning"]))
     settings.setdefault("avatar", dict(DEFAULT_SETTINGS["avatar"]))
+    settings.setdefault("cdp", dict(DEFAULT_SETTINGS["cdp"]))
+    settings["cdp"].setdefault("always_on", True)
     settings["location"].setdefault("auto_detect", True)
     settings["location"].setdefault("lat", DEFAULT_SETTINGS["location"]["lat"])
     settings["location"].setdefault("lng", DEFAULT_SETTINGS["location"]["lng"])
@@ -262,6 +273,48 @@ def load_settings() -> dict:
         save_settings(settings)
 
     return settings
+
+
+def save_settings(settings: dict) -> None:
+    """Persist settings to disk."""
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(settings, f, indent=2, ensure_ascii=False)
+
+
+def toggle_chrome_cdp_always_on(enable: bool) -> bool:
+    """Configure Chrome desktop and start menu shortcuts to launch Chrome with CDP debugging port 9222 enabled."""
+    if os.name == "nt":
+        try:
+            import subprocess
+            cmd = f"""
+            $shell = New-Object -ComObject WScript.Shell
+            $paths = @(
+                "$env:USERPROFILE\\Desktop\\Google Chrome.lnk",
+                "$env:PUBLIC\\Desktop\\Google Chrome.lnk",
+                "$env:APPDATA\\Microsoft\\Windows\\Start Menu\\Programs\\Google Chrome.lnk"
+            )
+            foreach ($p in $paths) {{
+                if (Test-Path $p) {{
+                    $s = $shell.CreateShortcut($p)
+                    if ('{str(enable).lower()}' -eq 'true') {{
+                        if ($s.Arguments -notlike "*--remote-debugging-port=9222*") {{
+                            $s.Arguments = "$($s.Arguments) --remote-debugging-port=9222".Trim()
+                            $s.Save()
+                        }}
+                    }} else {{
+                        $s.Arguments = ($s.Arguments -replace '--remote-debugging-port=9222', '').Trim()
+                        $s.Save()
+                    }}
+                }}
+            }}
+            """
+            subprocess.run(["powershell", "-NoProfile", "-Command", cmd], capture_output=True)
+            print(f"[SETTINGS] Configured Chrome CDP Always-On shortcuts (enabled={enable}).")
+            return True
+        except Exception as e:
+            print(f"[SETTINGS] Failed to configure Chrome shortcuts for CDP: {e}")
+            return False
+    return False
 
 
 def save_settings(settings: dict) -> None:
