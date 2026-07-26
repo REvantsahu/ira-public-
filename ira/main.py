@@ -484,7 +484,11 @@ class JarvisLive:
         self._turn_done_event       = None
         self._briefing_sent         = False
         self._sys_monitor           = SystemMonitor()
-        self._proactive             = ProactiveEngine()
+        try:
+            from settings_manager import load_settings
+            self._proactive = ProactiveEngine.from_settings(load_settings())
+        except Exception:
+            self._proactive = ProactiveEngine()
         self._last_user_speech      = time.monotonic()
         self._session_log           = []
 
@@ -1099,7 +1103,12 @@ class JarvisLive:
                     tg.create_task(self._play_audio())
                     tg.create_task(self._run_system_monitor())
                     tg.create_task(self._run_background_monitor())
-                    tg.create_task(self._run_proactive_mode())
+                    try:
+                        from settings_manager import load_settings
+                        if load_settings().get("proactive", {}).get("enabled", True):
+                            tg.create_task(self._run_proactive_mode())
+                    except Exception:
+                        tg.create_task(self._run_proactive_mode())
 
                     # AI Speaks First on Startup Briefing
                     if not self._briefing_sent:
